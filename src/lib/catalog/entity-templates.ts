@@ -8,7 +8,7 @@
  * app type or prompt maps to one of these well-known entities.
  */
 
-import type { EntityFieldTemplate, EntityRelation, EntityTemplate } from '@/types/catalog';
+import type { EntityFieldTemplate, EntityTemplate } from '@/types/catalog';
 
 /* ====================================================================
  * Helper: common base fields shared by every entity

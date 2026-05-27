@@ -9,6 +9,9 @@
 export type FieldType =
   | 'string'
   | 'number'
+  | 'integer'
+  | 'float'
+  | 'decimal'
   | 'boolean'
   | 'date'
   | 'datetime'
@@ -16,6 +19,8 @@ export type FieldType =
   | 'uuid'
   | 'text'
   | 'email'
+  | 'url'
+  | 'phone'
   | 'enum';
 
 /** Supported relation cardinalities between entities. */
