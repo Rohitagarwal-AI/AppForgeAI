@@ -134,24 +134,26 @@ function AppSpecViewer({ appSpec }: { appSpec: AppSpec | null }): React.JSX.Elem
           <MetricPill icon={GitBranch} label="Workflows" value={String(appSpec.workflowStubs.length)} />
           <MetricPill icon={PlugZap} label="Integrations" value={String(appSpec.integrationHooks.length)} />
           <div className="md:col-span-2 xl:col-span-4">
-            <div className="rounded-lg border border-border bg-bg-secondary p-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
-                Provider Usage
-              </p>
-              <div className="grid gap-2 md:grid-cols-3">
-                {appSpec.metadata.providerUsage.map((usage, index) => (
-                  <div key={`${usage.stage}-${index}`} className="rounded-md border border-border bg-bg-primary p-3">
-                    <p className="text-sm font-semibold text-text-primary">{usage.stage}</p>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {usage.provider} / {usage.model}
-                    </p>
-                    <p className="mt-2 text-xs text-text-secondary">
-                      {usage.latencyMs}ms · ${usage.costUsd.toFixed(4)}
-                    </p>
-                  </div>
-                ))}
+            <Card className="p-0">
+              <div className="p-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-muted">
+                  Provider Usage
+                </p>
+                <div className="grid gap-2 md:grid-cols-3">
+                  {appSpec.metadata.providerUsage.map((usage, index) => (
+                    <div key={`${usage.stage}-${index}`} className="rounded-lg border border-border bg-bg-secondary p-4">
+                      <p className="text-sm font-semibold text-text-primary">{usage.stage}</p>
+                      <p className="mt-1 text-xs text-text-muted">
+                        {usage.provider} / {usage.model}
+                      </p>
+                      <p className="mt-2 text-xs text-text-secondary">
+                        {usage.latencyMs}ms · ${usage.costUsd.toFixed(4)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            </Card>
           </div>
         </div>
       )}
@@ -159,25 +161,27 @@ function AppSpecViewer({ appSpec }: { appSpec: AppSpec | null }): React.JSX.Elem
       {activeTab === 'schema' && (
         <div className="grid gap-3 lg:grid-cols-2">
           {appSpec.dataSchema.entities.map((entity) => (
-            <div key={entity.name} className="rounded-lg border border-border bg-bg-secondary p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-text-primary">{entity.name}</p>
-                  <p className="text-xs text-text-muted">{entity.tableName}</p>
+            <Card key={entity.name} className="p-0">
+              <div className="p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-text-primary">{entity.name}</p>
+                    <p className="text-xs text-text-muted">{entity.tableName}</p>
+                  </div>
+                  <Badge variant={entity.tenantId ? 'success' : 'error'}>tenant</Badge>
                 </div>
-                <Badge variant={entity.tenantId ? 'success' : 'error'}>tenant</Badge>
+                <div className="flex flex-wrap gap-2">
+                  {entity.fields.slice(0, 10).map((field) => (
+                    <span
+                      key={field.name}
+                      className="rounded-md border border-border bg-bg-primary px-2 py-1 text-xs text-text-secondary"
+                    >
+                      {field.name}: {field.type}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {entity.fields.slice(0, 10).map((field) => (
-                  <span
-                    key={field.name}
-                    className="rounded-md border border-border bg-bg-primary px-2 py-1 text-xs text-text-secondary"
-                  >
-                    {field.name}: {field.type}
-                  </span>
-                ))}
-              </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -185,21 +189,23 @@ function AppSpecViewer({ appSpec }: { appSpec: AppSpec | null }): React.JSX.Elem
       {activeTab === 'pages' && (
         <div className="grid gap-3 lg:grid-cols-2">
           {appSpec.pages.map((page) => (
-            <div key={`${page.name}-${page.route}`} className="rounded-lg border border-border bg-bg-secondary p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-text-primary">{page.name}</p>
-                  <p className="text-xs text-text-muted">{page.route}</p>
+            <Card key={`${page.name}-${page.route}`} className="p-0">
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-text-primary">{page.name}</p>
+                    <p className="text-xs text-text-muted">{page.route}</p>
+                  </div>
+                  <Badge variant={page.boundEntity && endpointEntities.has(page.boundEntity) ? 'success' : 'neutral'}>
+                    {page.layout}
+                  </Badge>
                 </div>
-                <Badge variant={page.boundEntity && endpointEntities.has(page.boundEntity) ? 'success' : 'neutral'}>
-                  {page.layout}
-                </Badge>
+                <p className="mt-3 text-xs text-text-secondary">
+                  {page.components.length} components
+                  {page.boundEntity ? ` · ${page.boundEntity}` : ''}
+                </p>
               </div>
-              <p className="mt-3 text-xs text-text-secondary">
-                {page.components.length} components
-                {page.boundEntity ? ` · ${page.boundEntity}` : ''}
-              </p>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -232,13 +238,15 @@ function AppSpecViewer({ appSpec }: { appSpec: AppSpec | null }): React.JSX.Elem
             <EmptyPanel text="No workflow stubs were required for this prompt." />
           )}
           {appSpec.workflowStubs.map((workflow) => (
-            <div key={workflow.id} className="rounded-lg border border-border bg-bg-secondary p-4">
-              <p className="font-semibold text-text-primary">{workflow.name}</p>
-              <p className="mt-1 text-sm text-text-secondary">{workflow.description}</p>
-              <p className="mt-3 text-xs text-text-muted">
-                {workflow.trigger.entity}.{workflow.trigger.event} · {workflow.actions.length} actions
-              </p>
-            </div>
+            <Card key={workflow.id} className="p-0">
+              <div className="p-4">
+                <p className="font-semibold text-text-primary">{workflow.name}</p>
+                <p className="mt-1 text-sm text-text-secondary">{workflow.description}</p>
+                <p className="mt-3 text-xs text-text-muted">
+                  {workflow.trigger.entity}.{workflow.trigger.event} · {workflow.actions.length} actions
+                </p>
+              </div>
+            </Card>
           ))}
         </div>
       )}
@@ -264,14 +272,16 @@ function ValidationPanel({ errors }: { errors: ValidationError[] }): React.JSX.E
       ) : (
         <div className="space-y-3">
           {errors.map((error, index) => (
-            <div key={`${error.code}-${index}`} className="rounded-lg border border-border bg-bg-secondary p-4">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Badge variant={severityVariant(error.severity)}>{error.severity}</Badge>
-                <span className="text-xs font-semibold text-text-muted">{error.code}</span>
+            <Card key={`${error.code}-${index}`} className="p-0">
+              <div className="p-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <Badge variant={severityVariant(error.severity)}>{error.severity}</Badge>
+                  <span className="text-xs font-semibold text-text-muted">{error.code}</span>
+                </div>
+                <p className="text-sm text-text-primary">{error.message}</p>
+                <p className="mt-2 text-xs text-text-muted">{error.stage} · {error.path || 'root'}</p>
               </div>
-              <p className="text-sm text-text-primary">{error.message}</p>
-              <p className="mt-2 text-xs text-text-muted">{error.stage} · {error.path || 'root'}</p>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -290,18 +300,20 @@ function RepairPanel({ logs }: { logs: RepairLog[] }): React.JSX.Element {
       ) : (
         <div className="space-y-3">
           {logs.slice(-8).map((log, index) => (
-            <div key={`${log.timestamp}-${index}`} className="rounded-lg border border-border bg-bg-secondary p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <Wrench className="h-4 w-4 text-accent" aria-hidden="true" />
-                  <span className="text-sm font-semibold text-text-primary">{log.strategy}</span>
+            <Card key={`${log.timestamp}-${index}`} className="p-0">
+              <div className="p-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-accent" aria-hidden="true" />
+                    <span className="text-sm font-semibold text-text-primary">{log.strategy}</span>
+                  </div>
+                  <Badge variant={log.outcome === 'repaired' ? 'success' : log.outcome === 'failed' ? 'error' : 'warning'}>
+                    {log.outcome}
+                  </Badge>
                 </div>
-                <Badge variant={log.outcome === 'repaired' ? 'success' : log.outcome === 'failed' ? 'error' : 'warning'}>
-                  {log.outcome}
-                </Badge>
+                <p className="text-xs text-text-secondary">{log.inputError.message}</p>
               </div>
-              <p className="text-xs text-text-secondary">{log.inputError.message}</p>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -321,16 +333,18 @@ function IntegrationPanel({
     >
       <div className="grid gap-3 md:grid-cols-2">
         {integrations.map((integration) => (
-          <div key={integration.id} className="rounded-lg border border-border bg-bg-secondary p-4">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <p className="font-semibold text-text-primary">{integration.displayName}</p>
-              <Badge variant="neutral">{integration.authType}</Badge>
+          <Card key={integration.id} className="p-0">
+            <div className="p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="font-semibold text-text-primary">{integration.displayName}</p>
+                <Badge variant="neutral">{integration.authType}</Badge>
+              </div>
+              <p className="line-clamp-2 text-sm text-text-secondary">{integration.description}</p>
+              <p className="mt-3 text-xs text-text-muted">
+                {integration.triggers.length} triggers · {integration.actions.length} actions
+              </p>
             </div>
-            <p className="line-clamp-2 text-sm text-text-secondary">{integration.description}</p>
-            <p className="mt-3 text-xs text-text-muted">
-              {integration.triggers.length} triggers · {integration.actions.length} actions
-            </p>
-          </div>
+          </Card>
         ))}
       </div>
     </Card>
@@ -408,9 +422,12 @@ function AssistantPanel({
           </button>
         ))}
       </div>
-      <p className="rounded-lg border border-border bg-bg-secondary p-4 text-sm leading-6 text-text-secondary">
-        {answer}
-      </p>
+      <Card className="p-0">
+        <div className="p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-text-muted">AI Insight</p>
+          <p className="mt-3 text-sm leading-6 text-text-secondary">{answer}</p>
+        </div>
+      </Card>
     </Card>
   );
 }

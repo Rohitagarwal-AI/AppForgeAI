@@ -42,23 +42,23 @@ export default function AssistantPage(): React.JSX.Element {
               Ask the assistant to explain AppSpecs, validation errors, repair logs, or integrations.
             </p>
             <textarea
-              className="w-full rounded border border-border bg-bg-primary p-3 text-text-primary"
+              className="w-full rounded-md border border-border bg-bg-primary p-3 text-text-primary placeholder:text-text-muted"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={6}
               placeholder="Ask me to explain your generated AppSpec, validation errors, repair strategy, or integrations."
             />
             <div className="mt-3 flex items-center justify-between">
-              <div className="flex gap-2 text-sm text-text-muted">
+              <div className="flex gap-2 text-sm">
                 <button
                   onClick={() => setMessage('Explain this AppSpec in simple words')}
-                  className="rounded border border-border px-3 py-1"
+                  className="rounded-md border border-border bg-bg-secondary px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
                 >
                   Explain AppSpec
                 </button>
                 <button
                   onClick={() => setMessage('Why did validation fail?')}
-                  className="rounded border border-border px-3 py-1"
+                  className="rounded-md border border-border bg-bg-secondary px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
                 >
                   Why validation?
                 </button>
@@ -67,7 +67,7 @@ export default function AssistantPage(): React.JSX.Element {
                 <button
                   onClick={() => void send()}
                   disabled={loading}
-                  className="rounded bg-accent px-3 py-1 text-white disabled:opacity-60"
+                  className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-60"
                 >
                   {loading ? 'Thinking…' : 'Send'}
                 </button>

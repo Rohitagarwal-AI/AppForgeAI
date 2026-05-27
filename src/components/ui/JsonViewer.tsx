@@ -105,7 +105,7 @@ function JsonNode({
     <div>
       <button
         onClick={toggle}
-        className="flex items-center gap-1 text-left hover:bg-bg-card-hover rounded px-1 -ml-1"
+        className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-left text-text-secondary transition-colors hover:bg-bg-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
         style={{ paddingLeft: indent }}
       >
         <span className="text-text-muted select-none text-xs">
@@ -170,12 +170,12 @@ export function JsonViewer({
 
   return (
     <div
-      className={`relative rounded-lg border border-border bg-bg-primary p-4 font-mono text-xs leading-relaxed ${className}`}
+      className={`relative overflow-hidden rounded-lg border border-border bg-bg-secondary p-4 font-mono text-xs leading-relaxed shadow-card ${className}`}
     >
-      {/* Copy button */}
       <button
         onClick={() => void handleCopy()}
-        className="absolute right-3 top-3 rounded border border-border px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-bg-card-hover hover:text-text-primary"
+        className="absolute right-3 top-3 rounded-md border border-border bg-bg-card px-2.5 py-1 text-xs text-text-secondary transition-colors hover:bg-bg-card-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        aria-label="Copy JSON to clipboard"
       >
         {copied ? '✓ Copied' : 'Copy'}
       </button>
