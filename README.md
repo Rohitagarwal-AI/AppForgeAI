@@ -1,4 +1,6 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AppForge AI
+
+AppForge AI is a [Next.js](https://nextjs.org) project for turning product prompts into structured app specs.
 
 ## Getting Started
 
