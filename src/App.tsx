@@ -178,6 +178,15 @@ export default function App() {
       setProject(data);
     } catch (e) {
       console.warn('AppForge bridge syncing: Express server may be booting up.', e);
+      setProject({
+        projectName: 'appforgeai',
+        activeBranch: 'main',
+        commitHistory: [],
+        fileMetrics: [],
+        backlog: [],
+        stats: { totalFiles: 0, linesOfCode: 0, issuesSolved: 0, testsPassingPercentage: 0 },
+        bridge: { connected: false, lastSync: null, agentVersion: null, hostname: null, os: null, cpuModel: null }
+      });
     } finally {
       setLoading(false);
     }
