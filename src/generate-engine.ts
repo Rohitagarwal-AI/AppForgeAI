@@ -402,32 +402,41 @@ export function runRepairs(intent: any, schema: any, spec: any, priorValidation:
 // DETERMINISTIC DEMO CONTENT GENERATION
 // ==========================================
 
-export function generateDeterministicDemo(prompt: string): GenerationJob {
+export function generateDeterministicDemo(
+  prompt: string,
+  customName?: string,
+  appTypeField?: string,
+  techStack?: string,
+  featuresField?: string[]
+): GenerationJob {
   const pLower = prompt.toLowerCase();
   let category: 'crm' | 'task' | 'inventory' | 'hr' | 'ecommerce' | 'tracker' | 'custom' = 'custom';
 
-  if (pLower.includes('crm') || pLower.includes('real estate') || pLower.includes('lead') || pLower.includes('property')) {
+  // Support smart mapping from appTypeField or prompt
+  const typeStr = (appTypeField || '') + ' ' + pLower;
+  if (typeStr.includes('crm') || typeStr.includes('real estate') || typeStr.includes('lead') || typeStr.includes('property')) {
     category = 'crm';
-  } else if (pLower.includes('task') || pLower.includes('todo') || pLower.includes('sprint') || pLower.includes('collaboration')) {
+  } else if (typeStr.includes('task') || typeStr.includes('todo') || typeStr.includes('sprint') || typeStr.includes('collaboration')) {
     category = 'task';
-  } else if (pLower.includes('inventory') || pLower.includes('stock') || pLower.includes('warehouse') || pLower.includes('product')) {
+  } else if (typeStr.includes('inventory') || typeStr.includes('stock') || typeStr.includes('warehouse') || typeStr.includes('product')) {
     category = 'inventory';
-  } else if (pLower.includes('hr') || pLower.includes('employee') || pLower.includes('leave') || pLower.includes('manager')) {
+  } else if (typeStr.includes('hr') || typeStr.includes('employee') || typeStr.includes('leave') || typeStr.includes('manager')) {
     category = 'hr';
-  } else if (pLower.includes('ecommerce') || pLower.includes('store') || pLower.includes('shop') || pLower.includes('order')) {
+  } else if (typeStr.includes('ecommerce') || typeStr.includes('store') || typeStr.includes('shop') || typeStr.includes('order') || typeStr.includes('checkout')) {
     category = 'ecommerce';
-  } else if (pLower.includes('project') || pLower.includes('milestone') || pLower.includes('tracker')) {
+  } else if (typeStr.includes('project') || typeStr.includes('milestone') || typeStr.includes('tracker') || typeStr.includes('ledger') || typeStr.includes('fintech')) {
     category = 'tracker';
   }
 
   const timestamp = new Date().toISOString();
   const startTime = Date.now();
 
-  let appName = 'CustomWorkspaceAI';
-  let appType = 'Business Management Software Portal';
-  let features: string[] = ['Secure multi-tenancy dashboard', 'Context-aware workspace insights', 'Audit actions log'];
+  let appName = customName || 'CustomWorkspaceAI';
+  let appType = appTypeField || 'Business Management Software Portal';
+  let features: string[] = featuresField && featuresField.length > 0 ? featuresField : ['Secure multi-tenancy dashboard', 'Context-aware workspace insights', 'Audit actions log'];
   let entitiesList: string[] = [];
-  let integrationsRequested: string[] = ['Webhook'];
+  let integrationsRequested: string[] = featuresField ? featuresField.filter(f => ['Slack', 'WhatsApp', 'Stripe', 'Gmail', 'Google Sheets'].some(k => f.includes(k))) : ['Webhook'];
+  if (integrationsRequested.length === 0) integrationsRequested = ['Webhook'];
   let assumptions: string[] = ['Users are authenticating under organization workspaces', 'Tenant context mapped via session context token'];
 
   // Base structures depending on category
@@ -435,11 +444,11 @@ export function generateDeterministicDemo(prompt: string): GenerationJob {
   const appSpec: AppSpec = { pages: [], apiEndpoints: [], integrationHooks: [], workflowStubs: [] };
 
   if (category === 'crm') {
-    appName = 'PropAgent CRM';
-    appType = 'Real Estate Customer Relationship Portal';
-    features = ['Leads pipeline tracker', 'Agent assignments', 'Property directory listing', 'Deals contract scheduler'];
+    if (!customName) appName = 'PropAgent CRM';
+    if (!appTypeField) appType = 'Real Estate Customer Relationship Portal';
+    if (!featuresField) features = ['Leads pipeline tracker', 'Agent assignments', 'Property directory listing', 'Deals contract scheduler'];
     entitiesList = ['Lead', 'Agent', 'Property', 'Deal'];
-    if (pLower.includes('whatsapp')) integrationsRequested.push('WhatsApp');
+    if (pLower.includes('whatsapp') && !integrationsRequested.includes('WhatsApp')) integrationsRequested.push('WhatsApp');
     assumptions.push('Agents operate within localized micro-regions', 'Lead sync triggered via external Webhook');
 
     // Schema
@@ -1036,7 +1045,14 @@ export function generateDeterministicDemo(prompt: string): GenerationJob {
 // GEMINI REAL BLUEPRINT GENERATOR (WITH REPAIRS)
 // ==========================================
 
-export async function generateAIBlueprint(prompt: string, apiKey: string): Promise<GenerationJob> {
+export async function generateAIBlueprint(
+  prompt: string, 
+  apiKey: string,
+  customName?: string,
+  appType?: string,
+  techStack?: string,
+  features?: string[]
+): Promise<GenerationJob> {
   const timestamp = new Date().toISOString();
   const startTime = Date.now();
 
@@ -1048,7 +1064,14 @@ export async function generateAIBlueprint(prompt: string, apiKey: string): Promi
   });
 
   const promptConstruct = `
-You are an expert software workspace architect compiler. Given this developer specification prompt: "${prompt}".
+You are an expert software workspace architect compiler.
+We are building a software project styled with the following constraints:
+- Project Name: "${customName || 'Custom App'}"
+- Project Category/Type: "${appType || 'SaaS Suite'}"
+- Technical Deployment Stack: "${techStack || 'React + Express'}"
+- Selected Hook Modules: ${JSON.stringify(features || [])}
+
+The developer specification prompt is: "${prompt}".
 
 Build a clean, highly cohesive multi-tenant software blueprint matching exactly this JSON schema format. Return ONLY the JSON object, formatted as valid JSON under the following strict schemas. Do not use block-level markdown text wrapper outside the returned raw string.
 
@@ -1143,10 +1166,28 @@ Constraint strict directives:
     const dataSchema: DataSchema = parsed.dataSchema || { entities: [] };
     const appSpec: AppSpec = parsed.appSpec || { pages: [], apiEndpoints: [], integrationHooks: [], workflowStubs: [] };
 
-    // Set fallback name/type if missing
-    if (!appIntent.appName) appIntent.appName = 'AppForgeSystem';
-    if (!appIntent.appType) appIntent.appType = 'Integrated Multi-Tenant Business Portal';
-    if (!appIntent.features) appIntent.features = ['Multi-Tenant Context Tracker', 'Contextual insights'];
+    // Set fallback name/type if missing, or use custom overrides
+    if (customName) {
+      appIntent.appName = customName;
+    } else if (!appIntent.appName) {
+      appIntent.appName = 'AppForgeSystem';
+    }
+
+    if (appType) {
+      appIntent.appType = appType;
+    } else if (!appIntent.appType) {
+      appIntent.appType = 'Integrated Multi-Tenant Business Portal';
+    }
+
+    if (!appIntent.features) {
+      appIntent.features = features && features.length > 0 ? features : ['Multi-Tenant Context Tracker', 'Contextual insights'];
+    } else if (features && features.length > 0) {
+      // Merge
+      features.forEach(f => {
+        if (!appIntent.features.includes(f)) appIntent.features.push(f);
+      });
+    }
+
     if (!appIntent.entities) appIntent.entities = dataSchema.entities?.map(e => e.name) || [];
 
     // Run custom validation checks

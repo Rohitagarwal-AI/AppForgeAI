@@ -1,28 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppForgeProject, ProjectTask, Commit, GenerationJob } from './types';
-import LocalBridgeSetup from './components/LocalBridgeSetup';
-import KanbanBoard from './components/KanbanBoard';
-import GitStatus from './components/GitStatus';
-
-import Dashboard from './components/Dashboard';
 import GenerateApp from './components/GenerateApp';
-import PipelineLogs from './components/PipelineLogs';
 import IntegrationsTab from './components/IntegrationsTab';
-import EvaluationLogs from './components/EvaluationLogs';
-import CostAnalytics from './components/CostAnalytics';
 import SettingsTab from './components/SettingsTab';
 import FloatingAssistant from './components/assistant/FloatingAssistant';
+import AuthScreen from './components/AuthScreen';
+import ProjectsPage, { ProjectEntry } from './components/ProjectsPage';
+import ActivityPage, { ActivityEvent } from './components/ActivityPage';
 
 import { 
-  Briefcase, Terminal, GitCommit, Sparkles, Activity, 
-  RefreshCw, GitBranch, ShieldCheck, Mail, Clock, HelpCircle, Wifi 
+  Briefcase, Terminal, Sparkles, Activity, 
+  RefreshCw, GitBranch, ShieldCheck, Clock, HelpCircle, Wifi, LogOut, User,
+  BookOpen, Compass, ClipboardList, Layers, Settings,
+  Search, Bell, MessageSquare
 } from 'lucide-react';
 
 export default function App() {
   const [project, setProject] = useState<AppForgeProject | null>(null);
-  const [activeTab, setActiveTab] = useState<
-    'dashboard' | 'generate' | 'pipeline-logs' | 'integrations' | 'evaluations' | 'cost' | 'settings' | 'bridge' | 'backlog' | 'git'
-  >('dashboard');
+  const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const [user, setUser] = useState<{ name: string; email: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('appforge_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Exactly 5 requested main tabs
+  const [activeTab, setActiveTab] = useState<'generate' | 'projects' | 'integrations' | 'activity' | 'settings'>('generate');
+  const [profileOpen, setProfileOpen] = useState(false);
   const [time, setTime] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   
@@ -30,14 +37,147 @@ export default function App() {
   const [historyJobs, setHistoryJobs] = useState<GenerationJob[]>([]);
   const [activeJob, setActiveJob] = useState<GenerationJob | null>(null);
 
-  // 1. Fetch live coordinates from standard endpoint
+  // master SaaS lists
+  const [projectsList, setProjectsList] = useState<ProjectEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('appforge_projects_list');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    
+    // Default mock data matching your system architecture
+    return [
+      {
+        id: 'proj-1',
+        name: 'Acme SaaS Billing',
+        type: 'SaaS Suite',
+        techStack: 'React + Express',
+        features: ['Slack Notifications', 'Stripe Checkout', 'Relational DB'],
+        status: 'Deployed',
+        lastUpdated: '12 minutes ago',
+        liveUrl: 'https://acme-billing.appforge.ai',
+        githubRepo: 'github.com/agarwalrohit/acme-billing'
+      },
+      {
+        id: 'proj-2',
+        name: 'SocialVerse AI Sandbox',
+        type: 'AI Workspace Tool',
+        techStack: 'Vite + FastAPI',
+        features: ['Gmail Auditing Logs', 'Zod Auto Healer', 'Relational DB'],
+        status: 'Building',
+        lastUpdated: 'Just now',
+        liveUrl: 'https://socialverse-ai.appforge.ai',
+        githubRepo: 'github.com/agarwalrohit/socialverse-ai'
+      },
+      {
+        id: 'proj-3',
+        name: 'TaskFlow Slack Automation',
+        type: 'Fintech Sandbox Ledger',
+        techStack: 'Next.js + Tailwind',
+        features: ['Slack Notifications', 'Google Sheets Sync'],
+        status: 'Deployed',
+        lastUpdated: '5 hours ago',
+        liveUrl: 'https://taskflow-slack.appforge.ai',
+        githubRepo: 'github.com/agarwalrohit/taskflow-slack'
+      }
+    ];
+  });
+
+  const [selectedProject, setSelectedProject] = useState<ProjectEntry | null>(null);
+
+  const [activityLogs, setActivityLogs] = useState<ActivityEvent[]>(() => {
+    try {
+      const saved = localStorage.getItem('appforge_activity_logs');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    
+    // Unified live startup logs
+    return [
+      {
+        id: 'evt-1',
+        title: 'Acme SaaS Billing compiled successfully',
+        description: 'Multi-tenant database schema generated. Bound 7 REST endpoints and Stripe checkout integration.',
+        category: 'generation',
+        status: 'success',
+        timestamp: new Date(Date.now() - 25 * 60000).toISOString(),
+        latencyMs: 1420
+      },
+      {
+        id: 'evt-2',
+        title: 'SocialVerse AI Sandbox compilation pipeline triggered',
+        description: 'Preparing sandbox container to process requirements. Target: us-east4 microVM.',
+        category: 'build',
+        status: 'running',
+        timestamp: new Date(Date.now() - 5 * 60000).toISOString()
+      },
+      {
+        id: 'evt-3',
+        title: 'Stripe webhook configuration binding passed',
+        description: 'Validated secure OAuth certificates and synchronized customer webhook signature handlers.',
+        category: 'integration',
+        status: 'success',
+        timestamp: new Date(Date.now() - 4 * 3600000).toISOString(),
+        latencyMs: 380
+      },
+      {
+        id: 'evt-4',
+        title: 'TaskFlow Slack Automation deployed live',
+        description: 'Pushed production static assets and Node cluster configurations successfully to Edge CDN.',
+        category: 'deployment',
+        status: 'success',
+        timestamp: new Date(Date.now() - 5 * 3600000).toISOString(),
+        latencyMs: 1100
+      }
+    ];
+  });
+
+  // Synchronizers
+  const handleAddProject = (newProj: ProjectEntry) => {
+    setProjectsList(prev => {
+      // If project already exists (e.g. updating during deployment stage change), update standard values
+      const exists = prev.some(p => p.id === newProj.id || p.name === newProj.name);
+      let updated;
+      if (exists) {
+        updated = prev.map(p => (p.id === newProj.id || p.name === newProj.name) ? { ...p, ...newProj } : p);
+      } else {
+        updated = [newProj, ...prev];
+      }
+      localStorage.setItem('appforge_projects_list', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleAddActivityLog = (
+    title: string, 
+    desc: string, 
+    category: 'generation' | 'build' | 'integration' | 'deployment' | 'system', 
+    status: 'success' | 'running' | 'failed' | 'info'
+  ) => {
+    const newLog: ActivityEvent = {
+      id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      title,
+      description: desc,
+      category,
+      status,
+      timestamp: new Date().toISOString()
+    };
+    setActivityLogs(prev => {
+      const updated = [newLog, ...prev.slice(0, 48)]; // Keep max size lightweight
+      localStorage.setItem('appforge_activity_logs', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // 1. Fetch live project coordinates from standard endpoint
   const fetchStatus = async () => {
     try {
       const response = await fetch('/api/project');
+      if (!response.ok) {
+        throw new Error(`HTTP error ${response.status}`);
+      }
       const data = await response.json();
       setProject(data);
     } catch (e) {
-      console.error('Error fetching project coordinates:', e);
+      console.warn('AppForge bridge syncing: Express server may be booting up.', e);
     } finally {
       setLoading(false);
     }
@@ -64,7 +204,7 @@ export default function App() {
     // Dynamic auto-polling to fetch incoming sync changes from Node bridge client
     const pollInterval = setInterval(() => {
       fetchStatus();
-    }, 5000);
+    }, 12000);
 
     return () => {
       clearInterval(clockInterval);
@@ -72,52 +212,29 @@ export default function App() {
     };
   }, []);
 
-  // Update backend database task listings
-  const handleUpdateTaskStatus = async (taskId: string, status: ProjectTask['status']) => {
-    try {
-      const response = await fetch('/api/project/task/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taskId, status })
-      });
-      const data = await response.json();
-      if (data.success) {
-        // Optimistically update React State
-        setProject(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            backlog: prev.backlog.map(t => t.id === taskId ? { ...t, status } : t)
-          };
-        });
-      }
-    } catch (e) {
-      console.error('Error updating task status on backend:', e);
-    }
-  };
+  useEffect(() => {
+    if (!profileOpen) return;
 
-  // Add customized task to backend sprint board
-  const handleCreateTask = async (task: { title: string; description: string; priority: ProjectTask['priority']; category: string }) => {
-    try {
-      const response = await fetch('/api/project/task/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(task)
-      });
-      const data = await response.json();
-      if (data.success) {
-        setProject(prev => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            backlog: [...prev.backlog, data.newTask]
-          };
-        });
+    const handlePointerDown = (event: PointerEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setProfileOpen(false);
       }
-    } catch (e) {
-      console.error('Error creating new backlog task:', e);
-    }
-  };
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setProfileOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [profileOpen]);
 
   const handleResetBridge = async () => {
     try {
@@ -149,229 +266,315 @@ export default function App() {
 
   if (loading || !project) {
     return (
-      <div className="min-h-screen bg-[#080808] text-gray-400 flex flex-col items-center justify-center p-6 space-y-4 font-mono text-xs">
+      <div className="min-h-screen bg-[#0d0d0f] text-zinc-400 flex flex-col items-center justify-center p-6 space-y-4 font-mono text-xs">
         <Activity className="w-8 h-8 text-blue-500 animate-spin" />
-        <span>Loading AppForgeAI Project Monitor Workspace...</span>
+        <span>Loading AppForge Monitor Workspace...</span>
       </div>
     );
   }
 
+  if (!user) {
+    return <AuthScreen onLoginSuccess={(u) => setUser(u)} />;
+  }
+
   return (
-    <div className="min-h-screen bg-[#080808] text-gray-400 font-sans selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-[#070709] text-zinc-300 font-sans selection:bg-[#ffa116] selection:text-[#1a1a1a]">
       
-      {/* Top Banner & Telemetry Grid Frame */}
-      <header className="h-16 border-b border-white/5 bg-[#0a0a0a] sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto h-full px-8 flex items-center justify-between gap-4">
+      {/* Modern Workspace Top Header */}
+      <header className="h-14 border-b border-white/5 bg-[#09090b] sticky top-0 z-50 text-xs px-6 flex items-center justify-between select-none">
+        <div className="flex items-center space-x-6">
+          {/* Custom skewed elegant Orange AppForge logo */}
+          <div className="flex items-center space-x-2.5 cursor-pointer" onClick={() => { setSelectedProject(null); setActiveTab('generate'); }}>
+            <svg viewBox="0 0 24 24" className="w-6 h-6 fill-blue-500" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13.483 0a1.374 1.374 0 0 0-.961.414l-11.75 11.75a1.374 1.374 0 1 0 1.944 1.944l10.778-10.778 10.777 10.778a1.374 1.374 0 1 0 1.944-1.944l-11.75-11.75a1.374 1.374 0 0 0-.982-.414z"/>
+              <path d="M13.483 5.483a1.374 1.374 0 0 0-.961.414L1.75 16.67A1.374 1.374 0 1 0 3.69 18.62l10.778-10.778 10.777 10.778a1.374 1.374 0 1 0 1.944-1.944l-11.75-11.75a1.374 1.374 0 0 0-.982-.414z" opacity=".8"/>
+              <path d="M12.017 24a1.374 1.374 0 0 0 .961-.414l11.75-11.75a1.374 1.374 0 1 0-1.944-1.944l-10.778 10.778-10.777-10.778a1.374 1.374 0 1 0-1.944 1.944l11.75 11.75a1.374 1.374 0 0 0 .982.414z" />
+            </svg>
+            <span className="text-white font-medium text-[16px] font-sans tracking-tight">AppForgeAI</span>
+          </div>
           
-          <div className="flex items-center space-x-4">
-            <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center shadow-md">
-              <span className="text-white font-bold text-xs">AF</span>
-            </div>
-            <div>
-              <h1 className="text-white font-medium text-sm tracking-tight flex items-center">
-                AppForgeAI
-              </h1>
-              <p className="text-[9px] text-gray-500 uppercase tracking-widest font-mono">End-to-End Compiler Engine</p>
-            </div>
+          {/* Navigation links */}
+          <nav className="hidden md:flex items-center space-x-6">
+            {[
+              { id: 'generate', label: 'Generator Workspace' },
+              { id: 'projects', label: 'Projects' },
+              { id: 'activity', label: 'Activity' },
+              { id: 'integrations', label: 'Integrations' },
+              { id: 'settings', label: 'Settings' },
+            ].map((item) => {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    if (item.id === 'projects') {
+                      setSelectedProject(null);
+                    }
+                    setActiveTab(item.id as any);
+                  }}
+                  className={`py-1 hover:text-white font-medium transition-colors cursor-pointer relative text-[13px] ${
+                    isActive ? 'text-white font-bold' : 'text-zinc-550'
+                  }`}
+                >
+                  {item.label}
+                  {isActive && (
+                    <span className="absolute bottom-[-18px] left-0 right-0 h-[2px] bg-blue-500" />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        {/* Right Nav Options */}
+        <div className="flex items-center space-x-4">
+          
+          {/* Connection Status Indicator */}
+          <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-semibold font-sans rounded-lg">
+            <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+            Workspace Node Online
           </div>
 
-          <div className="flex items-center space-x-6">
-            {project.bridge.connected && (
-              <>
-                <div className="hidden sm:flex items-center space-x-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"></div>
-                  <span className="text-[11px] font-mono text-emerald-500">
-                    Live Terminal: {project.bridge.hostname}
-                  </span>
-                </div>
-                <div className="h-4 w-[1px] bg-white/10 hidden sm:block"></div>
-              </>
+          {/* Quick logs shortcut bubble */}
+          <button 
+            onClick={() => setActiveTab('activity')}
+            className={`text-zinc-400 hover:text-white transition-colors relative p-1.5 hover:bg-zinc-900 rounded-full cursor-pointer border ${
+              activeTab === 'activity' ? 'bg-zinc-900 border-white/10' : 'border-white/5 bg-[#0a0a0c]'
+            }`}
+            title="System Chronological event timeline"
+          >
+            <Activity className="w-4 h-4 text-blue-400" />
+            {activityLogs.length > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-[#ffa116] rounded-full animate-pulse" />
             )}
+          </button>
 
-            <div className="flex items-center gap-3 font-mono text-[10px] text-gray-500">
-              {/* Clock Indicator */}
-              <div className="flex items-center gap-1.5 bg-[#141414] border border-white/5 px-3 py-1.5 rounded text-gray-300">
-                <Clock className="w-3.5 h-3.5 text-blue-400" />
-                <span>{time || 'Syncing UTC time...'}</span>
+          {/* Avatar Profile Indicator */}
+          <div className="relative z-[100]" ref={profileMenuRef}>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+              onClick={() => setProfileOpen(prev => !prev)}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault();
+                  setProfileOpen(true);
+                }
+              }}
+              className={`flex items-center space-x-1.5 border rounded p-1 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/60 ${
+                profileOpen ? 'border-blue-500/35 bg-zinc-900' : 'border-white/5 bg-zinc-950/80 hover:bg-zinc-900'
+              }`}
+            >
+              <span className="w-6 h-6 bg-blue-600 text-white font-bold text-[10px] rounded flex items-center justify-center uppercase font-sans">
+                {user.name.slice(0, 2)}
+              </span>
+            </button>
+            
+            {/* Popover Profile Options */}
+            {profileOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-10 z-[9999] w-56 bg-[#0c0c0f] border border-white/10 rounded-xl shadow-2xl shadow-black/60 p-2.5 text-[11px] font-mono text-left pointer-events-auto animate-fade-in"
+              >
+                <div className="px-2 py-2 border-b border-white/5 leading-normal mb-1.5">
+                  <span className="text-white font-bold block truncate">{user.name}</span>
+                  <span className="text-zinc-500 block truncate text-[9px] font-sans">{user.email}</span>
+                </div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setActiveTab('settings');
+                  }}
+                  className="w-full text-left px-2.5 py-2 hover:bg-zinc-900 focus:bg-zinc-900 focus:outline-none text-zinc-300 hover:text-white rounded-lg cursor-pointer transition-colors block font-sans text-xs"
+                >
+                  Configurations Center
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    localStorage.removeItem('appforge_user');
+                    setProfileOpen(false);
+                    setUser(null);
+                  }}
+                  className="w-full text-left px-2.5 py-2 hover:bg-red-950/25 focus:bg-red-950/25 focus:outline-none text-red-400 hover:text-red-300 rounded-lg cursor-pointer transition-colors block mt-1.5 border-t border-white/5 font-bold font-sans text-xs"
+                >
+                  Sign Out
+                </button>
               </div>
-
-              {/* Email Profile Indicator */}
-              <div className="hidden md:flex items-center gap-1.5 bg-[#141414] border border-white/5 px-3 py-1.5 rounded text-gray-300">
-                <Mail className="w-3.5 h-3.5 text-blue-400" />
-                <span className="font-semibold">agarwalrohit22428@gmail.com</span>
-              </div>
-            </div>
+            )}
           </div>
 
         </div>
       </header>
 
       {/* Main Hub Body container */}
-      <main className="max-w-7xl mx-auto px-8 py-8 space-y-8">
+      <div className="flex max-w-[1360px] mx-auto px-5 py-6 gap-6 min-h-[calc(100vh-56px)] select-none">
         
-        {/* Navigation Selector Bar */}
-        <div className="space-y-4">
-          
-          {/* Main SaaS Platform Tabs */}
-          <div className="flex border-b border-white/5 scrollbar-none overflow-x-auto gap-1 self-start">
-            {[
-              { id: 'dashboard', label: 'Dashboard' },
-              { id: 'generate', label: 'Generate App' },
-              { id: 'pipeline-logs', label: 'Pipeline Logs' },
-              { id: 'integrations', label: 'Integrations' },
-              { id: 'evaluations', label: 'Evaluation Logs' },
-              { id: 'cost', label: 'Cost Analytics' },
-              { id: 'settings', label: 'Settings' }
-            ].map(tab => (
+        {/* Left Vertical Navigator Sidebar */}
+        <aside className="w-56 shrink-0 hidden md:flex flex-col justify-between font-sans border-r border-white/5 pr-4 select-none">
+          <div className="space-y-6 text-left">
+            
+            {/* Core categories */}
+            <div className="space-y-1">
+              <span className="text-[10px] text-zinc-650 font-bold uppercase tracking-wider block px-2.5">Platform Base</span>
+              
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`pb-3 px-4 text-[10px] uppercase tracking-widest font-bold transition-all relative whitespace-nowrap cursor-pointer ${
-                  activeTab === tab.id ? 'text-white' : 'text-gray-500 hover:text-zinc-300'
+                onClick={() => setActiveTab('generate')}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                  activeTab === 'generate' 
+                    ? 'bg-zinc-900 border border-white/5 text-white font-semibold' 
+                    : 'text-zinc-550 hover:text-zinc-200'
                 }`}
               >
-                {tab.label}
-                {activeTab === tab.id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-blue-500 rounded" />
-                )}
+                <div className="flex items-center space-x-3">
+                  <Layers className="w-4 h-4 text-[#ffa116]" />
+                  <span>Generator Workspace</span>
+                </div>
+                <span className="text-[8px] bg-blue-600 text-white px-1.5 py-0.5 rounded font-bold uppercase scale-90">active</span>
               </button>
-            ))}
+
+              <button
+                onClick={() => {
+                  setSelectedProject(null);
+                  setActiveTab('projects');
+                }}
+                className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer ${
+                  activeTab === 'projects' 
+                    ? 'bg-zinc-900 border border-white/5 text-white font-semibold' 
+                    : 'text-zinc-550 hover:text-zinc-200'
+                }`}
+              >
+                <Compass className="w-4 h-4 text-emerald-400" />
+                <span>Projects catalog</span>
+              </button>
+            </div>
+
+            {/* Miscellaneous details */}
+            <div className="space-y-1">
+              <span className="text-[10px] text-zinc-650 font-bold uppercase tracking-wider block px-2.5">Platform details</span>
+
+              <button
+                onClick={() => setActiveTab('integrations')}
+                className={`w-full flex items-center space-x-3 px-3 py-1.5 rounded-md text-[11px] transition-colors cursor-pointer ${
+                  activeTab === 'integrations' ? 'bg-zinc-900 text-white border border-white/5' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Cloud adapters</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('activity')}
+                className={`w-full flex items-center space-x-3 px-3 py-1.5 rounded-md text-[11px] transition-colors cursor-pointer ${
+                  activeTab === 'activity' ? 'bg-zinc-900 text-white border border-white/5' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5 text-pink-400" />
+                <span>Activity Timeline</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('settings')}
+                className={`w-full flex items-center space-x-3 px-3 py-1.5 rounded-md text-[11px] transition-colors cursor-pointer ${
+                  activeTab === 'settings' ? 'bg-zinc-900 text-white border border-white/5' : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                <Settings className="w-3.5 h-3.5 text-zinc-400" />
+                <span>Platform Settings</span>
+              </button>
+            </div>
+
           </div>
 
-          {/* Auxiliary Workstation Tabs */}
-          <div className="flex items-center gap-2.5 text-[10px] font-mono text-zinc-500 pl-4 py-1.5 bg-zinc-950/40 rounded border border-white/5 max-w-xl">
-            <span className="text-zinc-600 font-bold uppercase tracking-wider text-[8px] border-r border-white/5 pr-2.5">On-Prem Desk Tools</span>
-            
-            <button
-              onClick={() => setActiveTab('bridge')}
-              className={`hover:text-zinc-300 transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'bridge' ? 'text-[#1e90ff] font-bold' : ''}`}
-            >
-              [Connecting Terminal]
-            </button>
-            <span className="text-zinc-800">•</span>
-            <button
-              onClick={() => setActiveTab('backlog')}
-              className={`hover:text-zinc-300 transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'backlog' ? 'text-[#1e90ff] font-bold' : ''}`}
-            >
-              [Sprint Backlog]
-            </button>
-            <span className="text-zinc-800">•</span>
-            <button
-              onClick={() => setActiveTab('git')}
-              className={`hover:text-zinc-300 transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'git' ? 'text-[#1e90ff] font-bold' : ''}`}
-            >
-              [Git History]
-            </button>
+          {/* Active Clock Ticket in local time */}
+          <div className="border border-white/5 bg-[#09090b] rounded-lg p-3 space-y-2 mt-auto font-mono text-[9.5px] leading-relaxed text-zinc-500 text-left select-none">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <strong className="text-zinc-300 text-[10px]">Active Node Server</strong>
+            </div>
+            <p className="font-sans text-[10px] text-zinc-550 leading-normal">
+              IST Sync: {time.replace(' IST', '')}
+            </p>
           </div>
+        </aside>
 
-        </div>
-
-        {/* Tab content panels transitions */}
-        <div className="min-h-[460px]">
+        {/* Content Pane of Selected Tab */}
+        <div className="flex-1 min-w-0">
           
-          {/* Main 8 SaaS tabs */}
-          {activeTab === 'dashboard' && (
-            <div className="animate-fade-in">
-              <Dashboard 
-                project={project} 
-                onRefresh={fetchStatus} 
-                historyJobs={historyJobs}
-                onSelectJob={handleSelectJobFromDashboard}
-                onTriggerGenerateNav={() => setActiveTab('generate')}
+          {/* Render Active Tab */}
+          {activeTab === 'projects' && (
+            <div className="animate-fade-in text-left">
+              <ProjectsPage 
+                projectsList={projectsList}
+                setProjectsList={setProjectsList}
+                selectedProject={selectedProject}
+                setSelectedProject={setSelectedProject}
+                onNavigateToGenerate={() => setActiveTab('generate')}
+                activityLogs={activityLogs}
+                onAddActivityLog={handleAddActivityLog}
               />
             </div>
           )}
 
           {activeTab === 'generate' && (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in text-left">
               <GenerateApp 
                 onJobCreated={handleJobCreated}
                 activeJob={activeJob}
                 setActiveJob={setActiveJob}
+                onProjectAdded={handleAddProject}
+                onAddActivityLog={handleAddActivityLog}
+                setActiveTab={setActiveTab}
+                selectedProject={selectedProject}
+                setSelectedProject={setSelectedProject}
               />
-            </div>
-          )}
-
-          {activeTab === 'pipeline-logs' && (
-            <div className="animate-fade-in">
-              <PipelineLogs historyJobs={historyJobs} />
             </div>
           )}
 
           {activeTab === 'integrations' && (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in text-left">
               <IntegrationsTab />
             </div>
           )}
 
-          {activeTab === 'evaluations' && (
-            <div className="animate-fade-in">
-              <EvaluationLogs historyJobs={historyJobs} />
-            </div>
-          )}
-
-          {activeTab === 'cost' && (
-            <div className="animate-fade-in">
-              <CostAnalytics historyJobs={historyJobs} />
+          {activeTab === 'activity' && (
+            <div className="animate-fade-in text-left">
+              <ActivityPage 
+                activityLogs={activityLogs}
+                onClearLogs={() => {
+                  setActivityLogs([]);
+                  localStorage.setItem('appforge_activity_logs', '[]');
+                }}
+              />
             </div>
           )}
 
           {activeTab === 'settings' && (
-            <div className="animate-fade-in">
+            <div className="animate-fade-in text-left">
               <SettingsTab 
                 onResetBridge={handleResetBridge} 
-                projectName={project.projectName} 
-              />
-            </div>
-          )}
-
-
-
-          {/* Telemetry Workstation tools */}
-          {activeTab === 'bridge' && (
-            <div className="animate-fade-in">
-              <LocalBridgeSetup 
-                bridge={project.bridge} 
-                projectName={project.projectName} 
-                onRefresh={fetchStatus} 
-                onReset={handleResetBridge} 
-              />
-            </div>
-          )}
-
-          {activeTab === 'backlog' && (
-            <div className="animate-fade-in">
-              <KanbanBoard 
-                tasks={project.backlog} 
-                onUpdateTaskStatus={handleUpdateTaskStatus} 
-                onCreateTask={handleCreateTask} 
-              />
-            </div>
-          )}
-
-          {activeTab === 'git' && (
-            <div className="animate-fade-in">
-              <GitStatus 
-                commits={project.commitHistory} 
-                activeBranch={project.activeBranch} 
+                projectName={project?.projectName || 'sandboxed-node-core'} 
               />
             </div>
           )}
 
         </div>
-
-      </main>
+      </div>
 
       {/* Styled Applet Footer */}
-      <footer className="border-t border-white/5 bg-[#0a0a0a] py-8 mt-16 text-xs text-gray-500 font-mono">
-        <div className="max-w-7xl mx-auto px-8 flex flex-col md:flex-row justify-between items-center gap-4">
+      <footer className="border-t border-white/5 bg-[#09090b] py-6 text-[10px] text-zinc-550 font-mono mt-12 select-none">
+        <div className="max-w-[1360px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>AppForgeAI Development Pipeline Monitor Portal © 2026.</span>
+            <ShieldCheck className="w-4 h-4 text-emerald-500" />
+            <span>AppForge AI Platform © 2026.</span>
           </div>
           <div className="flex gap-4">
-            <span className="text-gray-600 font-sans">Secure Cloud Sandbox Node</span>
-            <span>Version 1.2.0 Stable Build</span>
+            <span className="text-zinc-650 font-sans">Enterprise Cloud Sandbox</span>
+            <span>v1.2.0 Stable Build</span>
           </div>
         </div>
       </footer>

@@ -53,10 +53,15 @@ export interface AppForgeProject {
 export interface AppIntent {
   appName: string;
   appType: string;
+  targetUsers?: string[];
   features: string[];
   entities: string[];
-  integrations_requested: string[];
+  authRequired?: boolean;
+  integrations?: string[];
+  integrations_requested?: string[];
   assumptions: string[];
+  missingInfo?: string[];
+  warnings?: string[];
 }
 
 export interface DataField {
@@ -83,10 +88,14 @@ export interface DataEntity {
 
 export interface DataSchema {
   entities: DataEntity[];
+  relations?: unknown[];
+  indexes?: unknown[];
+  crudRequirements?: string[];
 }
 
 export interface AppPage {
   name: string;
+  route?: string;
   path: string;
   layout: string;
   components: string[];
@@ -118,7 +127,11 @@ export interface WorkflowStub {
 
 export interface AppSpec {
   pages: AppPage[];
-  apiEndpoints: ApiEndpoint[];
+  apiEndpoints?: ApiEndpoint[];
+  apiRoutes?: unknown[];
+  databaseTables?: string[];
+  authFlow?: unknown;
+  navigationFlow?: unknown[];
   integrationHooks: IntegrationHook[];
   workflowStubs: WorkflowStub[];
 }
@@ -141,7 +154,7 @@ export interface RepairLogEntry {
 }
 
 export interface PipelineStageEvent {
-  stage: 'Intent Extraction' | 'Schema Generation' | 'AppSpec Generation' | 'Validation' | 'Repair Engine' | 'Complete';
+  stage: string;
   status: 'processing' | 'completed' | 'failed';
   latencyMs: number;
 }
@@ -179,4 +192,3 @@ export interface IntegrationRegistryEntry {
   triggers: string[];
   actions: string[];
 }
-

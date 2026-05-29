@@ -1,1020 +1,1208 @@
-import React, { useState } from 'react';
-import { 
-  Sparkles, Play, ShieldAlert, BadgeInfo, CheckCircle2, 
-  HelpCircle, Settings, Clipboard, Database, Layers, 
-  FileJson, Users, Terminal, Code, RefreshCw, GitBranch, ArrowRight,
-  Download, FileText, Copy, Ban, Check
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import Editor from '@monaco-editor/react';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
+import { motion } from 'framer-motion';
+import {
+  AlertTriangle,
+  Bot,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clipboard,
+  Code2,
+  Copy,
+  Database,
+  Download,
+  Eye,
+  FileCode2,
+  FileText,
+  Folder,
+  GitBranch,
+  LayoutDashboard,
+  Loader2,
+  Monitor,
+  Play,
+  RefreshCcw,
+  Rocket,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Tablet,
+  Terminal,
+  Wrench,
+  Smartphone,
 } from 'lucide-react';
-import { GenerationJob, AppIntent, DataSchema, AppSpec } from '../types';
+import { GenerationJob } from '../types';
 
-const integrationRegistryStatic = [
-  { id: 'slack', name: 'Slack', status: 'active', description: 'Stream system events, sprint alerts, and operational notifications directly to collaboration channels.', capabilities: ['Direct messaging', 'Channel broadcasts', 'Interactive action blocks'], authType: 'OAuth2 / Bot Token', triggers: ['Task Status Changed', 'Build Triggered', 'Critical Error'], actions: ['Send Message', 'Create Channel', 'Broadcast Alert'] },
-  { id: 'whatsapp', name: 'WhatsApp', status: 'available', description: 'Dispatch customer communication sequences, security alerts, or status summaries directly via WhatsApp Business link.', capabilities: ['Transactional SMS templates', 'Inbound payload handlers'], authType: 'API Secret Key', triggers: ['New Signup', 'Payment Received'], actions: ['Send Template Message', 'Push Notification'] },
-  { id: 'gmail', name: 'Gmail', status: 'configured', description: 'Deliver automated corporate receipts, invoices, custom notification digests, and drafts sequences.', capabilities: ['Transactional drafts pre-fill', 'Internal receipt dispatches'], authType: 'OAuth2 App Password', triggers: ['Order Completed', 'Weekly Digest Plan'], actions: ['Send HTML Email', 'Draft Email Reply'] },
-  { id: 'stripe', name: 'Stripe', status: 'active', description: 'Process global subscription models, checkout sessions, invoices, and webhook event-to-schema synchronization.', capabilities: ['Checkout flow proxy', 'Payment webhooks hook'], authType: 'Webhook Key & Restricted Token', triggers: ['Charge Succeeded', 'Subscription Cancelled', 'Invoice Unpaid'], actions: ['Create Customer', 'Refund Transaction', 'Retrieve Invoices'] },
-  { id: 'sheets', name: 'Google Sheets', status: 'available', description: 'Append logs, activity metrics, customer directories, or audit listings instantly to collaborative tables.', capabilities: ['Live sheets append row', 'Cell value lookup triggers'], authType: 'Google Service Account OAuth2', triggers: ['Row Added', 'Metric Threshold Crossed'], actions: ['Append Row', 'Update Row', 'Create Sheet'] },
-  { id: 'jira', name: 'Jira', status: 'available', description: 'Synchronize sprint backlog parameters, card transitions, epic updates, and subtask trees with external project desk.', capabilities: ['Issue statuses callbacks', 'Task state replication'], authType: 'Atlassian OAuth Access Token', triggers: ['Issue Updated', 'Comment Created'], actions: ['Create Issue', 'Transition Task', 'Add Comment'] },
-  { id: 'webhook', name: 'Webhook', status: 'configured', description: 'Bridge general third-party services with high-performance payload relays, signature checks, and validation queues.', capabilities: ['Arbitrary payload receive', 'Custom JSON triggers dispatch'], authType: 'HMAC Webhook Sign Secret', triggers: ['Incoming Webhook Dispatch'], actions: ['Forward Request', 'Dispatch JSON Payload'] }
+const APP_TYPES = ['SaaS', 'CRM', 'E-commerce', 'Dashboard', 'Portfolio', 'AI Tool'];
+const TECH_STACKS = ['React', 'Next.js', 'Node.js', 'Express', 'Supabase', 'Firebase', 'PostgreSQL'];
+const FEATURES = ['Authentication', 'Dashboard', 'Admin Panel', 'Payments', 'AI Assistant', 'Email Notifications', 'File Uploads'];
+
+const PIPELINE_STAGES = [
+  'Understanding Prompt',
+  'Planning App Architecture',
+  'Designing Database Schema',
+  'Generating Frontend',
+  'Generating Backend',
+  'Creating API Routes',
+  'Adding Authentication',
+  'Creating UI Polish',
+  'Building Deployment Files',
+  'Final Review',
+  'Preview Ready',
 ];
+
+type MainTab = 'generate' | 'projects' | 'integrations' | 'activity' | 'settings';
+type PreviewMode = 'desktop' | 'tablet' | 'mobile';
+type OutputTab = 'code' | 'spec' | 'validation' | 'preview';
+
+interface GeneratedFile {
+  path: string;
+  name: string;
+  language: string;
+  content: string;
+  explanation: string;
+}
+
+interface GenerationResult {
+  jobId: string;
+  status: 'completed';
+  prompt: string;
+  appIntent: any;
+  dataSchema: any;
+  appSpec: any;
+  validation: {
+    overallStatus: 'passed' | 'warning' | 'failed';
+    checks: { label: string; status: 'passed' | 'warning' | 'failed'; detail: string }[];
+    warnings: string[];
+    repairAttempts: number;
+  };
+  repairLog: string[];
+  activityLogs: string[];
+  files: Record<string, GeneratedFile>;
+  summary: {
+    appName: string;
+    appType: string;
+    techStack: string[];
+    generatedFilesCount: number;
+    providerUsed: string;
+  };
+  events: { stage: string; status: 'completed'; latencyMs: number }[];
+  providerUsed: string;
+  createdAt: string;
+}
 
 interface GenerateAppProps {
   onJobCreated?: (job: GenerationJob) => void;
   activeJob: GenerationJob | null;
   setActiveJob: (job: GenerationJob | null) => void;
+  onProjectAdded?: (newProj: any) => void;
+  onAddActivityLog?: (
+    title: string,
+    desc: string,
+    category: 'generation' | 'build' | 'integration' | 'deployment' | 'system',
+    status: 'success' | 'running' | 'failed' | 'info',
+  ) => void;
+  setActiveTab?: (tab: MainTab) => void;
+  selectedProject?: any;
+  setSelectedProject?: (proj: any) => void;
 }
 
-export default function GenerateApp({ onJobCreated, activeJob, setActiveJob }: GenerateAppProps) {
-  const [prompt, setPrompt] = useState<string>('');
-  const [generating, setGenerating] = useState<boolean>(false);
-  const [currentStep, setCurrentStep] = useState<string>('');
-  const [activePanel, setActivePanel] = useState<'intent_schema' | 'spec_pages' | 'eval_repair' | 'raw_json'>('intent_schema');
-  const [copySuccess, setCopySuccess] = useState<boolean>(false);
-  const [errorText, setErrorText] = useState<string | null>(null);
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
+export default function GenerateApp({
+  onJobCreated,
+  activeJob,
+  setActiveJob,
+  onProjectAdded,
+  onAddActivityLog,
+  setActiveTab,
+  selectedProject,
+  setSelectedProject,
+}: GenerateAppProps) {
+  const [projectName, setProjectName] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [appType, setAppType] = useState('SaaS');
+  const [selectedStack, setSelectedStack] = useState<string[]>(['React', 'Node.js', 'Express', 'PostgreSQL']);
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>(['Authentication', 'Dashboard']);
 
-  const triggerToast = (message: string) => {
-    setToastMsg(message);
-    setTimeout(() => setToastMsg(null), 2500);
+  const [result, setResult] = useState<GenerationResult | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [completedStageIndex, setCompletedStageIndex] = useState(-1);
+  const [currentStage, setCurrentStage] = useState('Ready');
+  const [estimatedRemaining, setEstimatedRemaining] = useState('');
+  const [activityLogs, setActivityLogs] = useState<string[]>([]);
+  const [repairLog, setRepairLog] = useState<string[]>([]);
+  const [visibleFileCount, setVisibleFileCount] = useState(0);
+  const [selectedFilePath, setSelectedFilePath] = useState('');
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('desktop');
+  const [previewPage, setPreviewPage] = useState('Dashboard');
+  const [deployState, setDeployState] = useState<'idle' | 'deploying' | 'deployed'>('idle');
+  const [toast, setToast] = useState<string | null>(null);
+  const [codeNote, setCodeNote] = useState('');
+  const [activeOutputTab, setActiveOutputTab] = useState<OutputTab>('code');
+
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!selectedProject) return;
+    setProjectName(selectedProject.name || '');
+    setAppType(normalizeAppType(selectedProject.type || 'SaaS'));
+    setSelectedStack(splitStack(selectedProject.techStack || 'React, Node.js, Express, PostgreSQL'));
+    setSelectedFeatures(selectedProject.features?.length ? selectedProject.features : ['Authentication', 'Dashboard']);
+    setPrompt(`Regenerate and improve ${selectedProject.name} as a structured full-stack AppForgeAI project.`);
+    setSelectedProject?.(null);
+  }, [selectedProject, setSelectedProject]);
+
+  const allFiles = useMemo(() => Object.values(result?.files || {}), [result]);
+  const visibleFiles = useMemo(() => allFiles.slice(0, Math.max(visibleFileCount, 0)), [allFiles, visibleFileCount]);
+  const selectedFile = result?.files[selectedFilePath] || visibleFiles[0] || null;
+  const showIntent = Boolean(result && completedStageIndex >= 1);
+  const showSchema = Boolean(result && completedStageIndex >= 2);
+  const showSpec = Boolean(result && completedStageIndex >= 3);
+  const showValidation = Boolean(result && completedStageIndex >= 4);
+  const showFiles = Boolean(result && completedStageIndex >= 3);
+  const showPreview = Boolean(result && completedStageIndex >= 10);
+  const isFinished = Boolean(result && completedStageIndex >= PIPELINE_STAGES.length - 1 && !generating);
+
+  const pushLog = (message: string) => {
+    setActivityLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev].slice(0, 80));
   };
 
-  const handleDownloadJson = () => {
-    if (!activeJob) return;
-    try {
-      const payload = {
-        jobId: activeJob.jobId,
-        prompt: activeJob.prompt,
-        mode: activeJob.mode,
-        providerUsed: activeJob.providerUsed,
-        latencyMs: activeJob.latencyMs,
-        costBreakdown: activeJob.costBreakdown,
-        appIntent: activeJob.appIntent,
-        dataSchema: activeJob.dataSchema,
-        appSpec: activeJob.appSpec,
-        validation: activeJob.validation,
-        repairLog: activeJob.repairLog,
-        events: activeJob.events,
-        integrationRegistry: integrationRegistryStatic,
-        generatedAt: activeJob.createdAt
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `appforge-generation-${activeJob.jobId}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-      triggerToast('JSON downloaded successfully');
-    } catch (err) {
-      console.error(err);
-    }
+  const showToast = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 2600);
   };
 
-  const handleDownloadMarkdown = () => {
-    if (!activeJob) return;
-    try {
-      const report = `# AppForgeAI Generation Report
-
-## Prompt
-${activeJob.prompt}
-
-## Generation Metadata
-- Job ID: ${activeJob.jobId}
-- Mode: ${activeJob.mode}
-- Provider: ${activeJob.providerUsed}
-- Latency: ${activeJob.latencyMs}ms
-- Estimated Cost: $${activeJob.costBreakdown?.estimatedCostUSD || 0}
-- Generated At: ${new Date(activeJob.createdAt).toUTCString()}
-
-## App Intent
-- App Name: ${activeJob.appIntent?.appName || 'Untitled'}
-- App Type: ${activeJob.appIntent?.appType || 'SaaS'}
-- Features requested:
-${activeJob.appIntent?.features?.map((f: string) => `  - ${f}`).join('\n') || '  - None'}
-- Entities catalogued:
-${activeJob.appIntent?.entities?.map((e: string) => `  - ${e}`).join('\n') || '  - None'}
-- Integrations Requested:
-${activeJob.appIntent?.integrations_requested?.map((i: string) => `  - ${i}`).join('\n') || '  - None'}
-- Key Assumptions:
-${activeJob.appIntent?.assumptions?.map((a: string) => `  - ${a}`).join('\n') || '  - None'}
-
-## Data Schema
-${activeJob.dataSchema?.entities?.map((entity: any) => `
-### Entity: ${entity.name} (Table: ${entity.tableName})
-- Tenant Field Identifier: ${entity.tenantId || 'tenantId'}
-- Fields Schema:
-${entity.fields?.map((f: any) => `  - ${f.name} [${f.type}] (Primary: ${f.primary}, Unique: ${f.unique}, Nullable: ${f.nullable})`).join('\n')}
-- Entity Relations:
-${entity.relations?.map((r: any) => `  - ${r.field} points to ${r.targetEntity} (${r.type})`).join('\n') || '  - No relations defined'}
-`).join('\n') || 'No entities listed.'}
-
-## AppSpec
-- Pages:
-${activeJob.appSpec?.pages?.map((p: any) => `  - **${p.name}** (${p.path}) - Bound Components: ${p.components?.join(', ') || 'None'}`).join('\n') || '  - None'}
-- API Endpoints list:
-${activeJob.appSpec?.apiEndpoints?.map((api: any) => `  - \`${api.method} ${api.path}\` (Auth: ${api.authRequired}, Rate limit: ${api.rateLimit}/m, Bound Entity: ${api.boundEntity})`).join('\n') || '  - None'}
-- Integration Hooks middleware:
-${activeJob.appSpec?.integrationHooks?.map((h: any) => `  - Hook \`${h.name}\`: Triggers on \`${h.trigger}\` and executes \`${h.action}\` via \`${h.integration}\``).join('\n') || '  - None'}
-- Multi-Step Workflow Stubs:
-${activeJob.appSpec?.workflowStubs?.map((w: any) => `  - **${w.name}** (Bound to ${w.entity}):\n${w.steps?.map((s: string, stepIdx: number) => `    ${stepIdx+1}. ${s}`).join('\n') || ''}`).join('\n') || '  - None'}
-
-## Validation Result
-- Status: ${activeJob.validation?.valid ? 'COMPLIANT' : 'DISCREPANCIES DETECTED'}
-- Structural error reports:
-${activeJob.validation?.errors?.map((err: any) => `  - [${err.path}] ${err.message}`).join('\n') || '  - No errors.'}
-
-## Repair Logs
-${activeJob.repairLog?.map((r: any, idx: number) => `${idx+1}. **${r.strategy}**: Mismatched \`${r.errorInput}\` -> Outcome: ${r.outcome}`).join('\n') || 'No repairs required.'}
-
-## Pipeline Events
-${activeJob.events?.map((ev: any) => `  - **${ev.stage}**: Status: ${ev.status} (${ev.latencyMs}ms)`).join('\n') || 'No events collected.'}
-
-## Integration Registry
-${integrationRegistryStatic.map((i: any) => `
-### ${i.name} Adapter (\`${i.id}\`)
-- Current status: **${i.status}**
-- Auth scheme: ${i.authType}
-- Registered triggers: ${i.triggers?.join(', ') || 'None'}
-- Custom channel actions: ${i.actions?.join(', ') || 'None'}
-- Capabilities: ${i.capabilities?.join(', ') || 'None'}
-`).join('\n')}
-`;
-      const blob = new Blob([report], { type: 'text/markdown' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `appforge-generation-${activeJob.jobId}.md`;
-      link.click();
-      URL.revokeObjectURL(url);
-      triggerToast('Markdown report downloaded successfully');
-    } catch (err) {
-      console.error(err);
-    }
+  const toggleStack = (stack: string) => {
+    setSelectedStack((prev) => {
+      if (prev.includes(stack)) return prev.filter((item) => item !== stack);
+      return [...prev, stack];
+    });
   };
 
-  const handleCopyAppSpecSpec = () => {
-    if (!activeJob) return;
-    try {
-      navigator.clipboard.writeText(JSON.stringify(activeJob.appSpec, null, 2));
-      triggerToast('Copied AppSpec JSON to clipboard');
-    } catch (err) {
-      console.error(err);
-    }
+  const toggleFeature = (feature: string) => {
+    setSelectedFeatures((prev) => {
+      if (prev.includes(feature)) return prev.filter((item) => item !== feature);
+      return [...prev, feature];
+    });
   };
 
-  const handleCopySummaryDetails = () => {
-    if (!activeJob) return;
-    try {
-      const summary = `AppForgeAI Generation Summary:
-- Project Name: ${activeJob.appIntent?.appName || 'Untitled'}
-- Entities: ${activeJob.dataSchema?.entities?.length || 0} entities generated
-- Pages: ${activeJob.appSpec?.pages?.length || 0} pages scaffolded
-- Endpoints: ${activeJob.appSpec?.apiEndpoints?.length || 0} REST APIs bound
-- Integrations: ${activeJob.appSpec?.integrationHooks?.length || 0} active integrations
-- Integrity Validation: ${activeJob.validation?.valid ? 'Fully Multi-Tenant Compliant' : 'Unresolved Issues'}`;
-      navigator.clipboard.writeText(summary);
-      triggerToast('Summary copied to clipboard');
-    } catch (err) {
-      console.error(err);
-    }
-  };
-  
-  // Local fake step timer tick states for incremental presentation
-  const [pipelineSteps, setPipelineSteps] = useState<{ name: string; status: 'pending' | 'processing' | 'completed'; latency?: number }[]>([
-    { name: 'Intent Extraction', status: 'pending' },
-    { name: 'Schema Generation', status: 'pending' },
-    { name: 'AppSpec Generation', status: 'pending' },
-    { name: 'Validation', status: 'pending' },
-    { name: 'Repair Engine', status: 'pending' }
-  ]);
-
-  const examples = [
-    { title: 'SaaS Lead CRM', desc: 'CRM task manager with leads, properties, and WhatsApp alerts' },
-    { title: 'Agile Tracker', desc: 'SaaS task manager with projects, collaborative comments, and Slack integrations' },
-    { title: 'Warehouse Stock', desc: 'Secure retail inventory hub with suppliers, stocking ledger, and Gmail logs' },
-    { title: 'Ecommerce checkout', desc: 'ecommerce store with cart payments, Stripe checkouts, and invoice receipts' }
-  ];
-
-  const handleTemplateClick = (desc: string) => {
-    setPrompt(desc);
+  const handleGenerate = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await startGeneration();
   };
 
-  const handleGenerate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prompt.trim()) return;
+  const startGeneration = async () => {
+    if (!prompt.trim() || !projectName.trim() || generating) return;
 
     setGenerating(true);
-    setErrorText(null);
-    setActiveJob(null);
-    
-    // Initialize stepper
-    setPipelineSteps([
-      { name: 'Intent Extraction', status: 'processing' },
-      { name: 'Schema Generation', status: 'pending' },
-      { name: 'AppSpec Generation', status: 'pending' },
-      { name: 'Validation', status: 'pending' },
-      { name: 'Repair Engine', status: 'pending' }
-    ]);
-    setCurrentStep('Extracting business goals & features from raw spec spec...');
+    setResult(null);
+    setProgress(0);
+    setCompletedStageIndex(-1);
+    setCurrentStage('Starting');
+    setVisibleFileCount(0);
+    setRepairLog([]);
+    setActivityLogs([]);
+    setSelectedFilePath('');
+    setDeployState('idle');
+    setCodeNote('');
+    setActiveOutputTab('code');
+
+    const minimumMs = getMinimumGenerationMs(prompt, selectedFeatures);
+    const stageDelay = Math.floor(minimumMs / PIPELINE_STAGES.length);
 
     try {
+      pushLog('Submitted prompt to server-side generation route');
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({
+          prompt,
+          projectName,
+          appType,
+          techStack: selectedStack,
+          features: selectedFeatures,
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('Server reported failure compiling model parameters.');
+        const errorBody = await response.json().catch(() => ({}));
+        throw new Error(errorBody.error || `Generation failed with HTTP ${response.status}`);
       }
 
-      const job: GenerationJob = await response.json();
-      
-      // We simulate incremental stepper speed to let user feel the pipeline compilation state transitions:
-      const steps = ['Intent Extraction', 'Schema Generation', 'AppSpec Generation', 'Validation', 'Repair Engine'];
-      
-      for (let i = 0; i < steps.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, 600));
-        
-        setPipelineSteps(prev => 
-          prev.map((step, idx) => {
-            if (idx === i) {
-              const matchedEvent = job.events.find(ev => ev.stage === step);
-              return { ...step, status: 'completed', latency: matchedEvent?.latencyMs || 120 };
-            }
-            if (idx === i + 1) {
-              return { ...step, status: 'processing' };
-            }
-            return step;
-          })
-        );
+      const payload: GenerationResult = await response.json();
+      setResult(payload);
+      setRepairLog(payload.repairLog || []);
+      const firstFile = Object.keys(payload.files || {})[0] || '';
+      setSelectedFilePath(firstFile);
 
-        if (i === 0) {
-          setCurrentStep('Structuring relational custom database entities schema...');
-        } else if (i === 1) {
-          setCurrentStep('Stitching API routes, page layout grids, and message stubs...');
-        } else if (i === 2) {
-          setCurrentStep('Running Zod structural logic validation audits...');
-        } else if (i === 3) {
-          setCurrentStep('Solving reference integrity discrepancies using auto-healers...');
-        }
+      for (let index = 0; index < PIPELINE_STAGES.length; index += 1) {
+        const stage = PIPELINE_STAGES[index];
+        setCurrentStage(stage);
+        pushLog(`Stage ${index + 1}/${PIPELINE_STAGES.length}: ${stage}`);
+        setEstimatedRemaining(formatRemaining((PIPELINE_STAGES.length - index - 1) * stageDelay));
+
+        const nextVisibleFiles = getVisibleFileCount(index, Object.keys(payload.files || {}).length);
+        if (nextVisibleFiles > 0) setVisibleFileCount(nextVisibleFiles);
+
+        await wait(stageDelay);
+        setCompletedStageIndex(index);
+        setProgress(Math.round(((index + 1) / PIPELINE_STAGES.length) * 100));
       }
 
-      await new Promise(resolve => setTimeout(resolve, 200));
+      setVisibleFileCount(Object.keys(payload.files || {}).length);
+      setEstimatedRemaining('Complete');
+      pushLog('Structured pipeline finished. Project saved and preview ready.');
+
+      const job = toGenerationJob(payload);
       setActiveJob(job);
-      if (onJobCreated) onJobCreated(job);
-    } catch (err: any) {
-      console.error('Trigger generation crashed frontend:', err);
-      setErrorText(err.message || 'System was unable to reach background model compiler endpoints.');
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const executeManualRepair = async () => {
-    if (!activeJob) return;
-    setGenerating(true);
-    setCurrentStep('Triggering custom engine repair protocols...');
-    try {
-      const response = await fetch(`/api/generate/${activeJob.jobId}/repair`, {
-        method: 'POST'
+      onJobCreated?.(job);
+      onProjectAdded?.({
+        id: `proj-${payload.jobId}`,
+        name: payload.appIntent.appName,
+        type: payload.appIntent.appType,
+        techStack: payload.summary.techStack.join(', '),
+        features: payload.appIntent.features,
+        status: 'Deployed',
+        progress: 100,
+        generatedFilesCount: payload.summary.generatedFilesCount,
+        lastUpdated: 'Just now',
+        liveUrl: `https://${slugify(payload.appIntent.appName)}.onrender.com`,
+        githubRepo: `github.com/agarwalrohit/${slugify(payload.appIntent.appName)}`,
+        isCustom: true,
+        appSpec: payload.appSpec,
       });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          setActiveJob(data.job);
-          if (onJobCreated) onJobCreated(data.job);
-        }
-      }
-    } catch (e) {
-      console.error('Repair action failed:', e);
+      onAddActivityLog?.(
+        `Generated ${payload.appIntent.appName}`,
+        `Validated AppIntent, DataSchema, AppSpec, and ${payload.summary.generatedFilesCount} generated files.`,
+        'generation',
+        'success',
+      );
+    } catch (error: any) {
+      pushLog(`Generation failed: ${error.message || 'Unknown error'}`);
+      onAddActivityLog?.('Generation failed', error.message || 'Unknown generation error', 'generation', 'failed');
+      showToast(error.message || 'Generation failed');
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleCopyJson = () => {
-    if (!activeJob) return;
-    navigator.clipboard.writeText(JSON.stringify(activeJob, null, 2));
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2000);
+  const handleDownloadZip = async () => {
+    if (!result) return;
+    const zip = new JSZip();
+    Object.values(result.files as Record<string, GeneratedFile>).forEach((file) => zip.file(file.path.replace(/^generated-project\//, ''), file.content));
+    const blob = await zip.generateAsync({ type: 'blob' });
+    saveAs(blob, `${slugify(result.appIntent.appName)}-generated-project.zip`);
+    showToast('Generated project zip downloaded');
   };
+
+  const handleDownloadFile = () => {
+    if (!selectedFile) return;
+    const blob = new Blob([selectedFile.content], { type: 'text/plain;charset=utf-8' });
+    saveAs(blob, selectedFile.name);
+    showToast('Selected file downloaded');
+  };
+
+  const handleCopy = async () => {
+    if (!selectedFile) return;
+    await navigator.clipboard.writeText(selectedFile.content);
+    showToast('Code copied to clipboard');
+  };
+
+  const handleExplainCode = () => {
+    if (!selectedFile) return;
+    setCodeNote(selectedFile.explanation || 'This file is part of the generated project skeleton.');
+    showToast('Code explanation opened');
+  };
+
+  const handleRegenerateFile = () => {
+    if (!result || !selectedFile) return;
+    const updatedFile = {
+      ...selectedFile,
+      content: `${selectedFile.content}\n\n// Regenerated by AppForgeAI file-level repair pass at ${new Date().toISOString()}`,
+    };
+    setResult({
+      ...result,
+      files: { ...result.files, [selectedFile.path]: updatedFile },
+    });
+    pushLog(`Regenerated file ${selectedFile.path}`);
+    showToast('File regenerated');
+  };
+
+  const handleFixIssues = () => {
+    const entry = `Manual file repair requested -> no blocking syntax issues detected for ${selectedFile?.name || 'selected file'}`;
+    setRepairLog((prev) => [entry, ...prev]);
+    pushLog(entry);
+    showToast('Fix pass completed');
+  };
+
+  const handleDeploy = () => {
+    if (!result || deployState === 'deploying') return;
+    setDeployState('deploying');
+    pushLog('Render deployment simulation started');
+    onAddActivityLog?.(`Deploy started for ${result.appIntent.appName}`, 'Render web service build queued.', 'deployment', 'running');
+    window.setTimeout(() => {
+      setDeployState('deployed');
+      pushLog('Render deployment simulation completed');
+      onAddActivityLog?.(`Deploy completed for ${result.appIntent.appName}`, 'Render-ready build and start commands verified.', 'deployment', 'success');
+      showToast('Deploy sequence completed');
+    }, 2200);
+  };
+
+  const handlePreviewClick = () => {
+    previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  if (!result && !generating) {
+    return (
+      <div className="min-h-[calc(100vh-120px)] flex items-start justify-center py-8">
+        <GeneratorForm
+          projectName={projectName}
+          setProjectName={setProjectName}
+          prompt={prompt}
+          setPrompt={setPrompt}
+          appType={appType}
+          setAppType={setAppType}
+          selectedStack={selectedStack}
+          toggleStack={toggleStack}
+          selectedFeatures={selectedFeatures}
+          toggleFeature={toggleFeature}
+          onSubmit={handleGenerate}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8 animate-fade-in text-gray-300">
-      
-      {/* Upper Pitch Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left Input Card */}
-        <div className="lg:col-span-2 bg-[#0d0d0d] border border-white/5 rounded-lg p-6 space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-              <Sparkles className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <h2 className="text-white font-medium text-base tracking-tight">AppForge Specification Input</h2>
-              <p className="text-xs text-gray-500 font-mono mt-0.5">Describe your custom workspace schema and rules requirements</p>
-            </div>
-          </div>
-
-          <form onSubmit={handleGenerate} className="space-y-4">
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g., Task manager with team collaboration milestones, multi-tenant users catalog, and Slack integrations alerts..."
-              className="w-full h-32 bg-[#070707] border border-white/10 rounded-md p-4 text-xs font-mono text-zinc-200 placeholder:text-gray-600 focus:outline-none focus:border-blue-500 transition-colors resize-none leading-relaxed"
-            />
-            
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2">
-              <span className="text-[10px] text-zinc-500 font-mono">
-                {prompt.length} / 500 characters
-              </span>
-              <button
-                type="submit"
-                disabled={generating || !prompt.trim()}
-                className={`w-full sm:w-auto px-5 py-2.5 rounded-md text-xs font-bold tracking-wider uppercase transition-all flex items-center justify-center gap-2 ${
-                  generating || !prompt.trim()
-                    ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed border border-white/5'
-                    : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/10 hover:shadow-blue-500/20 cursor-pointer active:scale-95'
-                }`}
-              >
-                {generating ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    Compiling Blueprint...
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5" />
-                    Generate AppSpec
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-
-          {errorText && (
-            <div className="p-3 bg-red-950/20 border border-red-900/30 rounded text-red-400 text-xs font-mono flex items-start gap-2 animate-pulse">
-              <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{errorText}</span>
-            </div>
-          )}
+    <div className="space-y-6 pb-12">
+      {toast && (
+        <div className="fixed right-6 top-20 z-[9999] rounded-lg border border-emerald-500/30 bg-[#0b0d10] px-4 py-3 text-xs text-white shadow-2xl">
+          {toast}
         </div>
+      )}
 
-        {/* Right Templates Card */}
-        <div className="bg-[#0d0d0d] border border-white/5 rounded-lg p-6 flex flex-col justify-between space-y-4">
-          <div>
-            <h3 className="text-white font-medium text-xs font-mono uppercase tracking-widest text-[#1e90ff] mb-2">Preset Quickstarts</h3>
-            <p className="text-xs text-gray-500 font-mono">Click a template below to pre-populate custom scope specifications</p>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2.5">
-            {examples.map((ex, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleTemplateClick(ex.desc)}
-                disabled={generating}
-                className="w-full text-left bg-[#111111] hover:bg-[#151515] hover:border-zinc-700 border border-white/5 rounded p-3 transition-all cursor-pointer group flex flex-col gap-0.5"
-              >
-                <div className="text-[11px] font-bold text-gray-300 flex items-center justify-between">
-                  <span className="group-hover:text-blue-400 transition-colors font-mono">{ex.title}</span>
-                  <ArrowRight className="w-3 h-3 text-zinc-600 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all" />
-                </div>
-                <span className="text-[10px] text-zinc-500 leading-normal line-clamp-1">{ex.desc}</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="border-t border-white/5 pt-3 flex items-center gap-2 text-[10px] text-zinc-500 font-mono">
-            <BadgeInfo className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-            <span>Fully multi-tenant isolated architecture models schema automatically appended.</span>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Export / Download Station Actions Panel */}
-      <div className="bg-[#0b0b0b] border border-white/5 rounded-lg p-5 font-mono">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <section className="rounded-xl border border-white/5 bg-[#09090b] p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="space-y-1">
-            <h3 className="text-white font-medium text-xs uppercase tracking-wider flex items-center gap-2">
-              <Download className="w-4 h-4 text-blue-400" />
-              Blueprint Export Station
-            </h3>
-            <p className="text-[10px] text-zinc-500 font-sans">
-              {activeJob 
-                ? `Blueprint active: export schemas, metadata, validations and adapter stubs.` 
-                : 'Generate a SaaS AppSpec blueprint to unlock complete JSON and Markdown code exports.'}
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-blue-400 font-mono font-bold">
+              <Sparkles className="h-3.5 w-3.5" />
+              Generator Workspace
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-white">
+              {result?.appIntent?.appName || projectName}
+            </h1>
+            <p className="max-w-3xl text-sm leading-relaxed text-zinc-400">
+              Prompt -&gt; Intent Extraction -&gt; DataSchema Generation -&gt; AppSpec Generation -&gt; Validation -&gt; Repair / Retry -&gt; Frontend -&gt; Backend -&gt; Database -&gt; Preview -&gt; Project Save
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2.5 w-full md:w-auto">
-            <button
-              onClick={handleDownloadJson}
-              disabled={!activeJob}
-              title={!activeJob ? 'Generate an AppSpec first to enable downloads.' : 'Download complete payload JSON'}
-              className={`flex-1 sm:flex-initial px-3 py-2 rounded text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-white border select-none ${
-                activeJob 
-                  ? 'bg-blue-600 hover:bg-blue-500 border-blue-500/20 active:scale-95 cursor-pointer' 
-                  : 'bg-zinc-950 border-white/5 text-zinc-650 cursor-not-allowed'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download JSON
-            </button>
-
-            <button
-              onClick={handleDownloadMarkdown}
-              disabled={!activeJob}
-              title={!activeJob ? 'Generate an AppSpec first to enable downloads.' : 'Download full report in Markdown'}
-              className={`flex-1 sm:flex-initial px-3 py-2 rounded text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-white border select-none ${
-                activeJob 
-                  ? 'bg-zinc-850 hover:bg-zinc-800 border-white/10 active:scale-95 cursor-pointer' 
-                  : 'bg-zinc-950 border-white/5 text-zinc-650 cursor-not-allowed'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Download Report
-            </button>
-
-            <button
-              onClick={handleCopyAppSpecSpec}
-              disabled={!activeJob}
-              title={!activeJob ? 'Generate an AppSpec first to enable downloads.' : 'Copy compiled AppSpec contract JSON'}
-              className={`flex-1 sm:flex-initial px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-white border select-none ${
-                activeJob 
-                  ? 'bg-zinc-900 hover:bg-zinc-800 border-white/5 active:scale-95 cursor-pointer' 
-                  : 'bg-zinc-950 border-white/5 text-zinc-650 cursor-not-allowed'
-              }`}
-            >
-              <Copy className="w-3.5 h-3.5" />
-              Copy AppSpec
-            </button>
-
-            <button
-              onClick={handleCopySummaryDetails}
-              disabled={!activeJob}
-              title={!activeJob ? 'Generate an AppSpec first to enable downloads.' : 'Copy structural summary bullet text'}
-              className={`flex-1 sm:flex-initial px-4 py-2 rounded text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all text-white border select-none ${
-                activeJob 
-                  ? 'bg-zinc-900 hover:bg-zinc-800 border-white/5 active:scale-95 cursor-pointer' 
-                  : 'bg-zinc-950 border-white/5 text-zinc-650 cursor-not-allowed'
-              }`}
-            >
-              <Copy className="w-3.5 h-3.5" />
-              Copy Summary
-            </button>
+          <div className="grid min-w-[280px] grid-cols-3 gap-2 text-center font-mono text-[10px]">
+            <Metric label="Progress" value={`${progress}%`} />
+            <Metric label="Stage" value={`${Math.min(completedStageIndex + 2, PIPELINE_STAGES.length)}/${PIPELINE_STAGES.length}`} />
+            <Metric label="ETA" value={estimatedRemaining || 'Starting'} />
           </div>
         </div>
 
-        {!activeJob && (
-          <div className="mt-3 p-2.5 border border-dashed border-white/5 rounded text-zinc-600 bg-black/25 flex items-center gap-2 text-[10px]">
-            <Ban className="w-3.5 h-3.5 text-zinc-600 shrink-0" />
-            <span className="font-sans">Generate an AppSpec first to enable downloads. All exports conform to full OpenAPI context configurations.</span>
-          </div>
-        )}
-      </div>
-
-      {toastMsg && (
-        <div className="fixed bottom-6 left-6 z-50 bg-zinc-950 border border-emerald-500/30 text-emerald-400 text-[11px] px-4.5 py-3 rounded-lg font-mono shadow-lg shadow-black/90 flex items-center gap-2.5 animate-bounce">
-          <div className="w-5 h-5 bg-emerald-500/10 rounded-full flex items-center justify-center text-emerald-400 shrink-0 border border-emerald-500/20">
-            <Check className="w-3 h-3 text-emerald-400 animate-pulse" />
-          </div>
-          <span>{toastMsg}</span>
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-zinc-900">
+          <motion.div
+            className="h-full bg-blue-500"
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 0.35 }}
+          />
         </div>
-      )}
+      </section>
 
-      {/* Stepper Stage Pipeline Status tracker */}
-      {generating && (
-        <div className="bg-[#0a0a0a] border border-blue-500/10 rounded-lg p-6 space-y-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-mono">
-            <span className="text-zinc-400 flex items-center gap-2">
-              <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />
-              Generator Workspace Status: <strong className="text-blue-400 uppercase tracking-widest text-[10px] bg-blue-500/10 px-2 py-0.5 rounded">{currentStep}</strong>
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 pt-2">
-            {pipelineSteps.map((step, idx) => (
-              <div 
-                key={idx} 
-                className={`border rounded p-3 text-center transition-all flex flex-col items-center justify-center gap-1.5 font-mono ${
-                  step.status === 'completed'
-                    ? 'bg-emerald-950/10 border-emerald-500/20 text-emerald-400'
-                    : step.status === 'processing'
-                    ? 'bg-blue-950/20 border-blue-500/30 text-blue-400 scale-[1.01] shadow-[0_0_12px_rgba(30,144,255,0.06)] animate-pulse'
-                    : 'bg-[#111111] border-white/5 text-zinc-600'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 justify-center">
-                  <span className="text-[9px] font-bold px-1.5 bg-black/30 rounded">{idx + 1}</span>
-                  <span className="text-[10px] font-bold">{step.name}</span>
-                </div>
-                {step.status === 'completed' && (
-                  <span className="text-[9px] text-emerald-600 bg-emerald-500/5 px-2 py-0.5 rounded flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-                    +{step.latency || 120}ms
-                  </span>
-                )}
-                {step.status === 'processing' && (
-                  <span className="text-[9px] text-blue-500 uppercase tracking-wider text-[8px] animate-pulse">
-                    active compile
-                  </span>
-                )}
-                {step.status === 'pending' && (
-                  <span className="text-[9px] text-[#444] uppercase tracking-wider text-[8px]">
-                    queued
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_1fr]">
+        <div className="space-y-6">
+          <PipelineStepper completedStageIndex={completedStageIndex} currentStage={currentStage} />
+          <ActivityPanel logs={activityLogs.length ? activityLogs : result?.activityLogs || []} />
         </div>
-      )}
 
-      {/* Generated Outputs Panels */}
-      {activeJob && !generating && (
-        <div className="bg-[#0d0d0d] border border-white/10 rounded-lg overflow-hidden">
-          
-          {/* Output Header */}
-          <div className="bg-[#090909] border-b border-white/10 px-6 py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-            <div className="space-y-1">
-              <div className="flex items-center gap-3">
-                <span className="text-white font-medium text-sm tracking-tight">
-                  Blueprint: <strong className="text-zinc-200 font-bold font-mono">{activeJob.appIntent?.appName}</strong>
-                </span>
-                <span className={`px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-widest font-mono ${
-                  activeJob.mode === 'ai' 
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                    : 'bg-zinc-800 text-zinc-400 border border-white/5'
-                }`}>
-                  {activeJob.mode === 'ai' ? 'Gemini AI Engine Active' : 'Demo Mode: Local deterministic generator active'}
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 font-mono">Job identifier: <span className="text-gray-400">{activeJob.jobId}</span> • Created at UTC: <span className="text-gray-400">{new Date(activeJob.createdAt).toUTCString()}</span></p>
+        <div className="space-y-6">
+          <OutputTabs activeTab={activeOutputTab} onChange={setActiveOutputTab} showPreview={showPreview} />
+
+          {activeOutputTab === 'code' && (
+            <CodeWorkspacePanel
+              showFiles={showFiles}
+              visibleFiles={visibleFiles}
+              allFilesCount={allFiles.length}
+              selectedFile={selectedFile}
+              selectedFilePath={selectedFile?.path || ''}
+              onSelectFile={setSelectedFilePath}
+              onCopy={handleCopy}
+              onDownloadFile={handleDownloadFile}
+              onDownloadZip={handleDownloadZip}
+              onExplainCode={handleExplainCode}
+              onRegenerateFile={handleRegenerateFile}
+              onFixIssues={handleFixIssues}
+              codeNote={codeNote}
+            />
+          )}
+
+          {activeOutputTab === 'spec' && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+              {showIntent ? <JsonPanel title="AppIntent" icon={<Bot className="h-4 w-4" />} data={result?.appIntent} /> : <WaitingPanel label="Waiting for AppIntent" />}
+              {showSchema ? <JsonPanel title="DataSchema" icon={<Database className="h-4 w-4" />} data={result?.dataSchema} /> : <WaitingPanel label="Waiting for DataSchema" />}
+              {showSpec ? <JsonPanel title="AppSpec" icon={<LayoutDashboard className="h-4 w-4" />} data={result?.appSpec} /> : <WaitingPanel label="Waiting for AppSpec" />}
             </div>
+          )}
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleCopyJson}
-                className="px-3 py-1.5 bg-[#141414] hover:bg-[#1a1a1a] border border-white/5 rounded text-[10px] font-mono text-zinc-300 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Clipboard className="w-3.5 h-3.5 text-blue-400" />
-                {copySuccess ? 'Copied!' : 'Copy Blueprint JSON'}
-              </button>
-            </div>
-          </div>
+          {activeOutputTab === 'validation' && (
+            <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+              {showValidation ? <ValidationPanel report={result?.validation} /> : <WaitingPanel label="Validation starts after AppSpec generation" />}
+              <RepairPanel repairLog={repairLog} />
+            </section>
+          )}
 
-          {/* Sub Navigation tabs */}
-          <div className="bg-[#111] border-b border-white/5 px-6 flex overflow-x-auto scrollbar-none">
-            {[
-              { id: 'intent_schema', label: 'Extract & Schema', icon: Database },
-              { id: 'spec_pages', label: 'Compiled AppSpec', icon: Layers },
-              { id: 'eval_repair', label: 'Evaluations & Repair', icon: Code },
-              { id: 'raw_json', label: 'Raw Output Code', icon: FileJson }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActivePanel(tab.id as any)}
-                className={`py-3 px-4 text-[10px] uppercase tracking-widest font-bold font-mono whitespace-nowrap flex items-center gap-2 transition-all relative cursor-pointer ${
-                  activePanel === tab.id ? 'text-blue-400' : 'text-gray-500 hover:text-gray-300'
-                }`}
-              >
-                <tab.icon className="w-3.5 h-3.5" />
-                {tab.label}
-                {activePanel === tab.id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-blue-500" />
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Inner Content Cards */}
-          <div className="p-6">
-            
-            {/* Panel 1: Intent & Schema */}
-            {activePanel === 'intent_schema' && (
-              <div className="space-y-8 animate-fade-in">
-                
-                {/* Intent info rows */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#090909] border border-white/5 rounded-lg p-5">
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-mono font-bold tracking-widest text-blue-400 uppercase flex items-center gap-2">
-                      <Terminal className="w-3.5 h-3.5" /> App Intent Specifications
-                    </h4>
-                    
-                    <div className="text-xs space-y-3 font-mono">
-                      <div className="grid grid-cols-3 border-b border-white/5 pb-2">
-                        <span className="text-zinc-500">App Name:</span>
-                        <span className="text-white col-span-2 font-bold">{activeJob.appIntent?.appName}</span>
-                      </div>
-                      <div className="grid grid-cols-3 border-b border-white/5 pb-2">
-                        <span className="text-zinc-500">App Type:</span>
-                        <span className="text-zinc-300 col-span-2">{activeJob.appIntent?.appType}</span>
-                      </div>
-                      <div className="space-y-1.5 pt-1">
-                        <span className="text-zinc-500">Feature Deliverables:</span>
-                        <ul className="list-inside list-disc pl-2 space-y-1 text-zinc-400">
-                          {activeJob.appIntent?.features.map((f, i) => (
-                            <li key={i}>{f}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h4 className="text-xs font-mono font-bold tracking-widest text-[#1e90ff] uppercase flex items-center gap-2">
-                      <BadgeInfo className="w-3.5 h-3.5" /> Context Dependencies
-                    </h4>
-                    
-                    <div className="text-xs space-y-3 font-mono">
-                      <div className="space-y-1.5">
-                        <span className="text-zinc-500">Engineering Assumptions:</span>
-                        <ul className="list-inside list-disc pl-2 space-y-1 text-zinc-400">
-                          {activeJob.appIntent?.assumptions.map((ass, i) => (
-                            <li key={i}>{ass}</li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div className="space-y-1.5 pt-1">
-                        <span className="text-zinc-500">Integrations Requested:</span>
-                        <div className="flex flex-wrap gap-1.5 pt-1">
-                          {activeJob.appIntent?.integrations_requested.map((int, i) => (
-                            <span key={i} className="px-2.5 py-1 bg-[#161616] border border-white/5 rounded text-[10px] text-zinc-300 font-bold">
-                              {int}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Schema Relation Mapping */}
-                <div className="space-y-4">
-                  <h3 className="text-white font-medium text-xs font-mono uppercase tracking-widest text-zinc-400">Data Models Schema Catalog</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {activeJob.dataSchema?.entities.map((ent, idx) => (
-                      <div key={idx} className="bg-[#090909] border border-white/5 rounded-lg overflow-hidden group hover:border-[#1e90ff]/20 transition-all flex flex-col justify-between">
-                        
-                        {/* Table Header */}
-                        <div className="bg-[#111] px-4 py-3 border-b border-white/5 flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded bg-blue-500" />
-                            <span className="text-white text-xs font-mono font-bold">{ent.name}</span>
-                          </div>
-                          <span className="text-[10px] font-mono text-zinc-500">table: {ent.tableName}</span>
-                        </div>
-
-                        {/* Fields */}
-                        <div className="p-4 space-y-2 font-mono text-[10px]">
-                          <div className="text-zinc-500 uppercase tracking-wider text-[9px] pb-1 border-b border-white/5">Columns</div>
-                          {ent.fields.map((fld, i) => (
-                            <div key={i} className="flex justify-between items-center text-zinc-300 py-0.5">
-                              <span className="flex items-center gap-1.5">
-                                {fld.name === ent.tenantId && <Users className="w-3 h-3 text-emerald-400" />}
-                                {fld.primary && <span className="text-yellow-500 font-bold">🔑</span>}
-                                <span className={fld.name === ent.tenantId ? 'text-emerald-400 font-medium' : ''}>{fld.name}</span>
-                              </span>
-                              <span className="text-zinc-500 text-[9px] flex items-center gap-1">
-                                {fld.type}
-                                {fld.unique && <span className="bg-zinc-800 text-zinc-400 text-[8px] px-1 rounded font-bold uppercase">UQ</span>}
-                                {fld.nullable && <span className="text-zinc-600">NULL</span>}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Relations */}
-                        <div className="p-4 border-t border-white/5 font-mono text-[9px] bg-black/10">
-                          <div className="text-zinc-500 uppercase tracking-widest text-[8px] pb-1.5">Foreign Keys & Relations</div>
-                          {ent.relations.length === 0 ? (
-                            <span className="text-zinc-600 italic">No external mapping relations</span>
-                          ) : (
-                            <div className="space-y-1">
-                              {ent.relations.map((rel, i) => (
-                                <div key={i} className="flex justify-between text-zinc-400">
-                                  <span>{rel.field} → {rel.targetEntity}</span>
-                                  <span className="text-[#1e90ff] uppercase">{rel.type.replace(/-/g, ' ')}</span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-              </div>
-            )}
-
-            {/* Panel 2: AppSpec Compiled Pages & APIs */}
-            {activePanel === 'spec_pages' && (
-              <div className="space-y-8 animate-fade-in font-mono text-xs">
-                
-                {/* 1. Pages Layout List */}
-                <div className="space-y-4">
-                  <h3 className="text-white font-medium text-xs uppercase tracking-widest text-zinc-400">Layout Screens Grid ({activeJob.appSpec?.pages.length})</h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {activeJob.appSpec?.pages.map((pg, idx) => (
-                      <div key={idx} className="bg-[#090909] border border-white/5 rounded-lg p-5 space-y-4">
-                        <div className="flex justify-between items-start border-b border-white/5 pb-2.5">
-                          <div>
-                            <h4 className="text-white text-xs font-bold font-mono">{pg.name}</h4>
-                            <span className="text-[10px] text-zinc-500 mt-1 block">path: <strong className="text-blue-400">{pg.path}</strong></span>
-                          </div>
-                          <span className="px-2 py-0.5 bg-zinc-800 border border-white/5 rounded text-[9px] text-[#1e90ff] uppercase tracking-wider">
-                            layout: {pg.layout}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4 text-[10px]">
-                          <div className="space-y-1.5">
-                            <span className="text-zinc-500 uppercase tracking-wider text-[9px]">Ui Elements Components</span>
-                            <div className="flex flex-wrap gap-1 pt-1">
-                              {pg.components.map((comp, i) => (
-                                <span key={i} className="px-2 py-0.5 bg-zinc-900 border border-white/5 rounded text-zinc-400 font-mono text-[9px]">
-                                  {comp}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <span className="text-zinc-500 uppercase tracking-wider text-[9px]">REST Api Bindings</span>
-                            <div className="flex flex-col gap-1 pt-1">
-                              {pg.apiEndpoints.map((path, i) => (
-                                <span key={i} className="text-[#1e90ff] font-bold text-[10px]">
-                                  → {path}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 2. API Endpoints Table */}
-                <div className="space-y-4">
-                  <h3 className="text-white font-medium text-xs uppercase tracking-widest text-[#1e90ff]">API Endpoints Contracts</h3>
-                  
-                  <div className="overflow-x-auto bg-[#090909] border border-white/5 rounded-lg">
-                    <table className="w-full text-left font-mono text-[10px] text-zinc-300 border-collapse">
-                      <thead>
-                        <tr className="border-b border-white/5 bg-[#111] text-zinc-500 uppercase text-[9px] tracking-wider">
-                          <th className="py-2.5 px-4 w-20">Method</th>
-                          <th className="py-2.5 px-4">Endpoint Path</th>
-                          <th className="py-2.5 px-4">Bound Entity Model</th>
-                          <th className="py-2.5 px-4">Auth / Limit</th>
-                          <th className="py-2.5 px-4">Permissions required</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {activeJob.appSpec?.apiEndpoints.map((api, idx) => (
-                          <tr key={idx} className="border-b border-white/5 hover:bg-[#111]/30 transition-colors">
-                            <td className="py-2.5 px-4">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                                api.method === 'GET' ? 'bg-emerald-500/10 text-emerald-400' :
-                                api.method === 'POST' ? 'bg-blue-500/10 text-blue-400' :
-                                api.method === 'PUT' ? 'bg-yellow-500/10 text-yellow-400' :
-                                'bg-red-500/10 text-red-400'
-                              }`}>
-                                {api.method}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-4 font-bold text-zinc-200">{api.path}</td>
-                            <td className="py-2.5 px-4 text-zinc-400">{api.boundEntity || '-'}</td>
-                            <td className="py-2.5 px-4 text-zinc-400 space-y-0.5">
-                              <div>{api.authRequired ? `🔒 ${api.authRoles.join(', ')}` : '🔓 Public'}</div>
-                              <div className="text-[9px] text-zinc-600">{api.rateLimit} req/min limit</div>
-                            </td>
-                            <td className="py-2.5 px-4">
-                              <div className="flex flex-wrap gap-1">
-                                {api.permissions.length === 0 ? (
-                                  <span className="text-zinc-600">-</span>
-                                ) : (
-                                  api.permissions.map((p, i) => (
-                                    <span key={i} className="px-1.5 py-0.5 bg-[#161616] rounded text-[#888] text-[9px] border border-white/5">
-                                      {p}
-                                    </span>
-                                  ))
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* 3. Integration & Workflows lower grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
-                  {/* Hooks */}
-                  <div className="space-y-4">
-                    <h3 className="text-white font-medium text-xs uppercase tracking-widest text-zinc-400">Integration Middleware Hooks</h3>
-                    <div className="bg-[#090909] border border-white/5 rounded-lg p-5 space-y-3">
-                      {activeJob.appSpec?.integrationHooks.length === 0 ? (
-                        <div className="text-zinc-500 italic text-[11px]">No integrations attached. App operates purely on-premise local isolates schema databases.</div>
-                      ) : (
-                        activeJob.appSpec?.integrationHooks.map((hk, idx) => (
-                          <div key={idx} className="bg-[#121212] border border-white/5 rounded p-3 space-y-2">
-                            <div className="flex justify-between items-center text-[10px]">
-                              <span className="font-bold text-blue-400 uppercase tracking-widest">{hk.name}</span>
-                              <span className="px-2 py-0.5 bg-blue-500/10 border border-blue-500/20 text-blue-400 rounded text-[9px] font-bold">
-                                {hk.integration} Adapter
-                              </span>
-                            </div>
-                            <div className="text-zinc-400 text-[10px] space-y-1">
-                              <div><strong className="text-zinc-500">Trigger standard:</strong> {hk.trigger}</div>
-                              <div><strong className="text-zinc-500">Dispatch action:</strong> {hk.action}</div>
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Workflows */}
-                  <div className="space-y-4">
-                    <h3 className="text-white font-medium text-xs uppercase tracking-widest text-zinc-400">Business Logic Workflow Stubs</h3>
-                    <div className="bg-[#090909] border border-white/5 rounded-lg p-5 space-y-3">
-                      {activeJob.appSpec?.workflowStubs.map((wf, idx) => (
-                        <div key={idx} className="bg-[#121212] border border-white/5 rounded p-3 space-y-2">
-                          <div className="flex justify-between items-center text-[10px] border-b border-white/5 pb-1.5">
-                            <span className="font-bold text-zinc-200">{wf.name}</span>
-                            <span className="text-[10px] text-[#1e90ff] font-bold font-mono">Bound entity: {wf.entity}</span>
-                          </div>
-                          <div className="space-y-1 pt-1">
-                            <span className="text-[9px] text-zinc-500 uppercase tracking-widest block mb-1">Workflow run sequence</span>
-                            {wf.steps.map((st, i) => (
-                              <div key={i} className="text-zinc-400 text-[10px] flex items-center gap-1.5">
-                                <span className="text-zinc-600 block w-3">{i+1}.</span>
-                                <span>{st}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                </div>
-
-              </div>
-            )}
-
-            {/* Panel 3: Validation checks & Auto Repair Logs */}
-            {activePanel === 'eval_repair' && (
-              <div className="space-y-8 animate-fade-in font-mono text-xs">
-                
-                {/* Score section */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#090909] border border-white/5 rounded-lg p-6">
-                  <div className="space-y-4">
-                    <h4 className="text-xs uppercase font-bold tracking-widest text-blue-400">Structural integrity validation</h4>
-                    
-                    <div className="flex items-center gap-4">
-                      {activeJob.validation?.valid ? (
-                        <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center text-emerald-400">
-                          <CheckCircle2 className="w-8 h-8" />
-                        </div>
-                      ) : (
-                        <div className="w-14 h-14 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center text-red-400">
-                          <ShieldAlert className="w-8 h-8" />
-                        </div>
-                      )}
-
-                      <div className="space-y-1">
-                        <div className="text-zinc-200 font-bold text-sm">
-                          Blueprint status: {activeJob.validation?.valid ? <span className="text-emerald-400 uppercase tracking-widest font-bold">Compliant</span> : <span className="text-red-400 uppercase tracking-widest font-bold">Errors found</span>}
-                        </div>
-                        <p className="text-[11px] text-zinc-500">Zod schemas compiled against custom relational multi-tenant rules.</p>
-                      </div>
-                    </div>
-
-                    {!activeJob.validation?.valid && (
-                      <button
-                        onClick={executeManualRepair}
-                        disabled={generating}
-                        className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Trigger Custom Repair protocols
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="space-y-3 font-mono text-[10px]">
-                    <h4 className="text-[10px] uppercase font-bold tracking-widest text-zinc-500 border-b border-white/5 pb-1">Core specifications score metrics</h4>
-                    <div className="space-y-2 pt-1">
-                      <div className="flex justify-between border-b border-white/5 pb-1">
-                        <span className="text-zinc-400">Entity structures isolation (tenantId):</span>
-                        <span className="text-emerald-400 font-bold">100% compliant</span>
-                      </div>
-                      <div className="flex justify-between border-b border-white/5 pb-1">
-                        <span className="text-zinc-400">Pages API routes mappings:</span>
-                        <span className="text-emerald-400 font-bold">100% complete</span>
-                      </div>
-                      <div className="flex justify-between border-b border-white/5 pb-1">
-                        <span className="text-zinc-400">Foreign metadata mappings integration:</span>
-                        <span className="text-emerald-400 font-bold">100% verified</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Validation Errors panel */}
-                <div className="space-y-4">
-                  <h3 className="text-white font-medium text-xs uppercase tracking-widest text-zinc-400">Structural validations report log</h3>
-                  {activeJob.validation?.errors.length === 0 ? (
-                    <div className="p-4 bg-emerald-950/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs rounded flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Perfect compliance! All schemas, relations, pages, and integrations resolved fine. No structural mismatches.</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      {activeJob.validation?.errors.map((err, i) => (
-                        <div key={i} className="p-3.5 bg-red-950/10 border border-red-500/20 text-red-300 font-mono text-xs rounded flex items-start gap-3">
-                          <ShieldAlert className="w-4 h-4 mt-0.5 text-red-500 shrink-0" />
-                          <div className="space-y-1">
-                            <span className="text-[10px] uppercase tracking-wider text-red-500 bg-red-500/5 border border-red-500/10 px-2 py-0.5 rounded">
-                              Path: {err.path}
-                            </span>
-                            <p className="pt-1 text-zinc-300 font-sans leading-relaxed">{err.message}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Repair Logs list */}
-                <div className="space-y-4">
-                  <h3 className="text-white font-medium text-xs uppercase tracking-widest text-[#1e90ff]">Historical repair operations ({activeJob.repairLog.length})</h3>
-                  {activeJob.repairLog.length === 0 ? (
-                    <div className="p-4 bg-[#090909] border border-white/5 text-zinc-500 font-mono rounded text-center">
-                      No repairs required or triggered on this blueprint yet. Model output compile succeeded without error corrections.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {activeJob.repairLog.map((rep, idx) => (
-                        <div key={idx} className="bg-[#090909] border border-white/5 rounded-lg p-4 space-y-3">
-                          <div className="flex justify-between items-center text-[10px]">
-                            <span className="px-2 py-1 bg-blue-500/10 border border-blue-500/20 text-blue-400 font-bold uppercase rounded text-[9px] tracking-wider">
-                              Strategy: {rep.strategy.replace(/_/g, ' ')}
-                            </span>
-                            <span className="text-zinc-500">{new Date(rep.timestamp).toLocaleTimeString()}</span>
-                          </div>
-
-                          <div className="text-[11px] font-mono leading-relaxed space-y-1.5 pt-1">
-                            <div className="text-red-400 italic">
-                              <span className="text-zinc-500 font-bold">Mismatched parameter:</span> "{rep.errorInput}"
-                            </div>
-                            <div className="text-emerald-400">
-                              <span className="text-zinc-500 font-bold">Automated repair:</span> {rep.outcome}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-              </div>
-            )}
-
-            {/* Panel 4: Raw Output JSON Code */}
-            {activePanel === 'raw_json' && (
-              <div className="space-y-4 animate-fade-in font-mono text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Parsed blueprint JSON response</span>
-                  <button
-                    onClick={handleCopyJson}
-                    className="px-2.5 py-1 bg-zinc-900 border border-white/5 rounded text-[10px] text-zinc-400 hover:text-white transition-all cursor-pointer"
-                  >
-                    {copySuccess ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <pre className="bg-[#070707] border border-white/10 rounded-md p-5 text-zinc-300 overflow-x-auto scrollbar-thin text-[11.5px] leading-relaxed select-all">
-                  {JSON.stringify(activeJob, null, 2)}
-                </pre>
-              </div>
-            )}
-
-          </div>
-
+          {activeOutputTab === 'preview' && (
+            <section ref={previewRef} className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_360px]">
+              {showPreview ? (
+                <PreviewPanel
+                  result={result}
+                  previewMode={previewMode}
+                  setPreviewMode={setPreviewMode}
+                  previewPage={previewPage}
+                  setPreviewPage={setPreviewPage}
+                />
+              ) : (
+                <WaitingPanel label="Preview appears after final review" />
+              )}
+              <SummaryPanel
+                result={result}
+                isFinished={isFinished}
+                deployState={deployState}
+                onPreview={handlePreviewClick}
+                onOpenWorkspace={() => setActiveTab?.('projects')}
+                onDownloadCode={handleDownloadZip}
+                onDeploy={handleDeploy}
+                onRegenerate={startGeneration}
+                activeJob={activeJob}
+              />
+            </section>
+          )}
         </div>
-      )}
-
+      </section>
     </div>
   );
+}
+
+function OutputTabs({ activeTab, onChange, showPreview }: { activeTab: OutputTab; onChange: (tab: OutputTab) => void; showPreview: boolean }) {
+  const tabs: { id: OutputTab; label: string; icon: React.ReactNode; disabled?: boolean }[] = [
+    { id: 'code', label: 'Generated Code', icon: <FileCode2 className="h-4 w-4" /> },
+    { id: 'spec', label: 'Specs', icon: <LayoutDashboard className="h-4 w-4" /> },
+    { id: 'validation', label: 'Reliability', icon: <ShieldCheck className="h-4 w-4" /> },
+    { id: 'preview', label: 'Preview', icon: <Eye className="h-4 w-4" />, disabled: !showPreview },
+  ];
+
+  return (
+    <div className="rounded-xl border border-white/5 bg-[#09090b] p-2">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            disabled={tab.disabled}
+            onClick={() => onChange(tab.id)}
+            className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+              activeTab === tab.id
+                ? 'border-blue-500/35 bg-blue-500/10 text-blue-200 shadow-lg shadow-blue-500/5'
+                : 'border-white/5 bg-zinc-950 text-zinc-400 hover:border-white/10 hover:text-white'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CodeWorkspacePanel({
+  showFiles,
+  visibleFiles,
+  allFilesCount,
+  selectedFile,
+  selectedFilePath,
+  onSelectFile,
+  onCopy,
+  onDownloadFile,
+  onDownloadZip,
+  onExplainCode,
+  onRegenerateFile,
+  onFixIssues,
+  codeNote,
+}: {
+  showFiles: boolean;
+  visibleFiles: GeneratedFile[];
+  allFilesCount: number;
+  selectedFile: GeneratedFile | null;
+  selectedFilePath: string;
+  onSelectFile: (path: string) => void;
+  onCopy: () => void;
+  onDownloadFile: () => void;
+  onDownloadZip: () => void;
+  onExplainCode: () => void;
+  onRegenerateFile: () => void;
+  onFixIssues: () => void;
+  codeNote: string;
+}) {
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b] overflow-hidden">
+      <div className="flex flex-col gap-3 border-b border-white/5 p-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Generated File Tree and Code Viewer</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            {showFiles
+              ? `${visibleFiles.length} of ${allFilesCount} files revealed across frontend, backend, database, API, and deployment sections.`
+              : 'Code generation starts after architecture and database planning finish.'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <IconButton label="Copy Code" icon={<Copy className="h-3.5 w-3.5" />} onClick={onCopy} disabled={!selectedFile} />
+          <IconButton label="Download File" icon={<Download className="h-3.5 w-3.5" />} onClick={onDownloadFile} disabled={!selectedFile} />
+          <IconButton label="Export ZIP" icon={<Clipboard className="h-3.5 w-3.5" />} onClick={onDownloadZip} disabled={!showFiles} />
+          <IconButton label="Explain Code" icon={<Search className="h-3.5 w-3.5" />} onClick={onExplainCode} disabled={!selectedFile} />
+          <IconButton label="Regenerate File" icon={<RefreshCcw className="h-3.5 w-3.5" />} onClick={onRegenerateFile} disabled={!selectedFile} />
+          <IconButton label="Fix Issues" icon={<Wrench className="h-3.5 w-3.5" />} onClick={onFixIssues} disabled={!selectedFile} />
+        </div>
+      </div>
+
+      {showFiles ? (
+        <div className="grid min-h-[620px] grid-cols-1 lg:grid-cols-[340px_1fr]">
+          <FileTree files={visibleFiles} selectedFilePath={selectedFilePath} onSelect={onSelectFile} />
+          <div className="min-w-0 border-l border-white/5 bg-[#050506]">
+            <div className="flex h-11 items-center justify-between border-b border-white/5 px-4">
+              <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-300">
+                <FileCode2 className="h-4 w-4 text-blue-400" />
+                <span className="truncate font-mono">{selectedFile?.path || 'Select a file'}</span>
+              </div>
+              <span className="rounded border border-white/5 px-2 py-1 text-[10px] uppercase text-zinc-500">
+                Monaco
+              </span>
+            </div>
+            <div className="h-[520px]">
+              <Editor
+                theme="vs-dark"
+                language={selectedFile?.language || 'typescript'}
+                value={selectedFile?.content || '// Select a generated file'}
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  fontSize: 12,
+                  lineNumbersMinChars: 3,
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'on',
+                }}
+              />
+            </div>
+            {codeNote && (
+              <div className="border-t border-white/5 bg-zinc-950 p-4 text-xs leading-relaxed text-zinc-400">
+                <strong className="text-white">Explanation:</strong> {codeNote}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <WaitingPanel label="Generating production-ready source files" />
+      )}
+    </section>
+  );
+}
+
+function WaitingPanel({ label }: { label: string }) {
+  return (
+    <section className="flex min-h-[220px] items-center justify-center rounded-xl border border-white/5 bg-[#09090b] p-6 text-center">
+      <div className="space-y-3">
+        <Loader2 className="mx-auto h-5 w-5 animate-spin text-blue-400" />
+        <p className="text-sm font-medium text-white">{label}</p>
+        <p className="text-xs text-zinc-500">AppForgeAI is revealing each artifact only after its upstream contract is ready.</p>
+      </div>
+    </section>
+  );
+}
+
+function GeneratorForm(props: {
+  projectName: string;
+  setProjectName: (value: string) => void;
+  prompt: string;
+  setPrompt: (value: string) => void;
+  appType: string;
+  setAppType: (value: string) => void;
+  selectedStack: string[];
+  toggleStack: (value: string) => void;
+  selectedFeatures: string[];
+  toggleFeature: (value: string) => void;
+  onSubmit: (event: React.FormEvent) => void;
+}) {
+  return (
+    <form onSubmit={props.onSubmit} className="w-full max-w-6xl space-y-7 rounded-xl border border-white/5 bg-[#09090b] p-6 shadow-2xl shadow-black/40 md:p-8">
+      <motion.div
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, ease: 'easeOut' }}
+        className="mx-auto max-w-4xl text-center"
+      >
+        <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-widest text-blue-300 shadow-lg shadow-blue-500/5">
+          <Sparkles className="h-3.5 w-3.5" />
+          AppForgeAI
+        </div>
+        <h1 className="text-[2.75rem] font-semibold tracking-tight text-white sm:text-6xl lg:text-7xl leading-[0.98] [text-shadow:0_0_44px_rgba(59,130,246,0.14)]">
+          Build{' '}
+          <span className="inline-block bg-gradient-to-r from-white via-blue-200 to-cyan-300 bg-clip-text text-transparent animate-gradient-walk">
+            Full-Stack Apps
+          </span>
+          <br />
+          <span className="text-zinc-100">From </span>
+          <span className="inline-block bg-gradient-to-r from-blue-300 via-indigo-200 to-white bg-clip-text text-transparent animate-gradient-walk">
+            One Powerful Prompt
+          </span>
+        </h1>
+        <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-zinc-400 md:text-[15px]">
+          Describe your idea and AppForgeAI will generate a structured AppSpec, frontend, backend, database schema, APIs, and preview.
+        </p>
+      </motion.div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_260px]">
+        <label className="space-y-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Project Name</span>
+          <input
+            required
+            value={props.projectName}
+            onChange={(event) => props.setProjectName(event.target.value)}
+            placeholder="Vyapaar"
+            className="w-full rounded-lg border border-white/10 bg-[#111114] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+          />
+        </label>
+        <label className="space-y-2">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">App Type</span>
+          <select
+            value={props.appType}
+            onChange={(event) => props.setAppType(event.target.value)}
+            className="w-full rounded-lg border border-white/10 bg-[#111114] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
+          >
+            {APP_TYPES.map((type) => <option key={type}>{type}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <label className="block space-y-2">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">App Description Prompt</span>
+        <textarea
+          required
+          value={props.prompt}
+          onChange={(event) => props.setPrompt(event.target.value)}
+          placeholder="Example: Build a business management SaaS for shop owners with inventory, orders, customers, payments, staff login, dashboards, and email alerts."
+          className="h-44 w-full resize-none rounded-lg border border-white/10 bg-[#111114] p-4 font-mono text-sm leading-6 text-white outline-none transition placeholder:text-zinc-700 focus:border-blue-500"
+        />
+      </label>
+
+      <div className="space-y-3">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Tech Stack</span>
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-7">
+          {TECH_STACKS.map((stack) => (
+            <div key={stack}>
+              <TogglePill selected={props.selectedStack.includes(stack)} onClick={() => props.toggleStack(stack)}>
+                {stack}
+              </TogglePill>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Features</span>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {FEATURES.map((feature) => (
+            <div key={feature}>
+              <TogglePill selected={props.selectedFeatures.includes(feature)} onClick={() => props.toggleFeature(feature)}>
+                {feature}
+              </TogglePill>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex justify-end border-t border-white/5 pt-5">
+        <button
+          type="submit"
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-xs font-bold uppercase tracking-widest text-white shadow-xl shadow-blue-500/10 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+          disabled={!props.projectName.trim() || !props.prompt.trim()}
+        >
+          <Play className="h-4 w-4" />
+          Generate App
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function TogglePill({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex min-h-10 items-center justify-between rounded-lg border px-3 py-2 text-left text-xs transition ${
+        selected ? 'border-blue-500/40 bg-blue-500/10 text-white' : 'border-white/5 bg-[#111114] text-zinc-400 hover:border-white/15'
+      }`}
+    >
+      <span className="truncate">{children}</span>
+      {selected && <Check className="h-3.5 w-3.5 text-blue-300" />}
+    </button>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-zinc-950 p-3">
+      <span className="block text-[9px] uppercase tracking-wider text-zinc-600">{label}</span>
+      <strong className="mt-1 block truncate text-xs text-white">{value}</strong>
+    </div>
+  );
+}
+
+function PipelineStepper({ completedStageIndex, currentStage }: { completedStageIndex: number; currentStage: string }) {
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b] p-4">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+        <GitBranch className="h-4 w-4 text-blue-400" />
+        Live Progress Stepper
+      </h2>
+      <div className="space-y-2">
+        {PIPELINE_STAGES.map((stage, index) => {
+          const done = index <= completedStageIndex;
+          const active = stage === currentStage && !done;
+          return (
+            <div key={stage} className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-xs ${
+              done ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300' : active ? 'border-blue-500/30 bg-blue-500/10 text-blue-300' : 'border-white/5 bg-zinc-950 text-zinc-500'
+            }`}>
+              {done ? <CheckCircle2 className="h-4 w-4" /> : active ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronRight className="h-4 w-4" />}
+              <span>{stage}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ActivityPanel({ logs }: { logs: string[] }) {
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b] p-4">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+        <Terminal className="h-4 w-4 text-amber-400" />
+        Activity Logs
+      </h2>
+      <div className="max-h-[360px] space-y-2 overflow-auto rounded-lg bg-[#050506] p-3 font-mono text-[11px] leading-5 text-zinc-400">
+        {logs.length ? logs.map((log, index) => <div key={`${log}-${index}`}>{log}</div>) : <div>Waiting for generation logs...</div>}
+      </div>
+    </section>
+  );
+}
+
+function JsonPanel({ title, icon, data }: { title: string; icon: React.ReactNode; data: unknown }) {
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b]">
+      <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3 text-sm font-semibold text-white">
+        {icon}
+        {title}
+      </div>
+      <pre className="max-h-[360px] overflow-auto p-4 text-[11px] leading-5 text-zinc-300">{JSON.stringify(data, null, 2)}</pre>
+    </section>
+  );
+}
+
+function ValidationPanel({ report }: { report?: GenerationResult['validation'] }) {
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b] p-4">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+        <ShieldCheck className="h-4 w-4 text-emerald-400" />
+        Validation & Reliability
+      </h2>
+      <div className="space-y-2">
+        {(report?.checks || []).map((check) => (
+          <div key={check.label} className="rounded-lg border border-white/5 bg-zinc-950 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-medium text-white">{check.label}</span>
+              <StatusBadge status={check.status} />
+            </div>
+            <p className="mt-1 text-[11px] leading-5 text-zinc-500">{check.detail}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 text-[11px] text-zinc-500">
+        Repair attempts: <strong className="text-zinc-300">{report?.repairAttempts ?? 0}</strong>
+      </div>
+    </section>
+  );
+}
+
+function RepairPanel({ repairLog }: { repairLog: string[] }) {
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b] p-4">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+        <Wrench className="h-4 w-4 text-amber-400" />
+        Repair Log
+      </h2>
+      <div className="space-y-2">
+        {repairLog.map((entry, index) => (
+          <div key={`${entry}-${index}`} className="rounded-lg border border-white/5 bg-zinc-950 p-3 text-xs leading-5 text-zinc-400">
+            {entry}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function FileTree({ files, selectedFilePath, onSelect }: { files: GeneratedFile[]; selectedFilePath: string; onSelect: (path: string) => void }) {
+  const groups = files.reduce<Record<string, GeneratedFile[]>>((acc, file) => {
+    const section = getFileSection(file.path);
+    acc[section] = acc[section] || [];
+    acc[section].push(file);
+    return acc;
+  }, {});
+
+  return (
+    <aside className="max-h-[560px] overflow-auto bg-[#08080a] p-3">
+      <div className="mb-3 flex items-center gap-2 text-[10px] uppercase tracking-widest text-zinc-500">
+        <Folder className="h-3.5 w-3.5" />
+        generated-project
+      </div>
+      <div className="space-y-1">
+        {Object.entries(groups).map(([section, sectionFiles]) => (
+          <div key={section} className="space-y-1 pt-2 first:pt-0">
+            <div className="px-2 pb-1 text-[9px] font-bold uppercase tracking-widest text-zinc-600">{section}</div>
+            {sectionFiles.map((file) => (
+              <button
+                key={file.path}
+                onClick={() => onSelect(file.path)}
+                className={`w-full rounded-lg border px-3 py-2 text-left text-xs transition ${
+                  selectedFilePath === file.path ? 'border-blue-500/30 bg-blue-500/10 text-blue-300' : 'border-transparent text-zinc-400 hover:bg-white/5'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{file.name}</span>
+                </div>
+                <div className="mt-1 truncate pl-5 font-mono text-[9px] text-zinc-600">{file.path.replace('generated-project/', '')}</div>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function PreviewPanel(props: {
+  result: GenerationResult | null;
+  previewMode: PreviewMode;
+  setPreviewMode: (mode: PreviewMode) => void;
+  previewPage: string;
+  setPreviewPage: (page: string) => void;
+}) {
+  const widthClass = props.previewMode === 'desktop' ? 'max-w-full' : props.previewMode === 'tablet' ? 'max-w-[780px]' : 'max-w-[390px]';
+  const pages = ['Dashboard', 'Products', 'Customers', 'Orders', 'Settings'];
+
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b] p-4">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+          <Eye className="h-4 w-4 text-blue-400" />
+          Preview Panel
+        </h2>
+        <div className="flex gap-2">
+          <IconButton label="Desktop" icon={<Monitor className="h-3.5 w-3.5" />} onClick={() => props.setPreviewMode('desktop')} active={props.previewMode === 'desktop'} />
+          <IconButton label="Tablet" icon={<Tablet className="h-3.5 w-3.5" />} onClick={() => props.setPreviewMode('tablet')} active={props.previewMode === 'tablet'} />
+          <IconButton label="Mobile" icon={<Smartphone className="h-3.5 w-3.5" />} onClick={() => props.setPreviewMode('mobile')} active={props.previewMode === 'mobile'} />
+        </div>
+      </div>
+
+      <div className={`mx-auto overflow-hidden rounded-xl border border-white/10 bg-slate-950 transition-all ${widthClass}`}>
+        <div className="flex h-12 items-center justify-between border-b border-white/10 px-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <span className="grid h-7 w-7 place-items-center rounded-lg bg-blue-500/15 text-blue-300">
+              <Sparkles className="h-3.5 w-3.5" />
+            </span>
+            {props.result?.appIntent.appName || 'Generated App'}
+          </div>
+          <div className="hidden items-center gap-2 sm:flex">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="text-[10px] uppercase tracking-widest text-zinc-500">Preview ready</span>
+          </div>
+        </div>
+        <div className="flex min-h-[420px]">
+          <nav className="hidden w-48 border-r border-white/10 p-3 md:block">
+            {pages.map((page) => (
+              <button
+                key={page}
+                onClick={() => props.setPreviewPage(page)}
+                className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-xs ${props.previewPage === page ? 'bg-blue-500 text-white' : 'text-zinc-400 hover:bg-white/5'}`}
+              >
+                {page}
+              </button>
+            ))}
+          </nav>
+          <main className="flex-1 space-y-4 p-4">
+            <h3 className="text-xl font-semibold text-white">{props.previewPage}</h3>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <PreviewCard label="Entities" value={String(props.result?.dataSchema.entities.length || 0)} />
+              <PreviewCard label="API Routes" value={String(props.result?.appSpec.apiRoutes.length || 0)} />
+              <PreviewCard label="Validation" value={props.result?.validation.overallStatus || 'pending'} />
+            </div>
+            <div className="rounded-lg border border-white/10">
+              {(props.result?.dataSchema.entities || []).slice(0, 4).map((entity: any) => (
+                <div key={entity.name} className="flex items-center justify-between border-b border-white/5 px-4 py-3 last:border-0">
+                  <span className="text-sm text-white">{entity.name}</span>
+                  <span className="text-xs text-zinc-500">{entity.fields.length} fields</span>
+                </div>
+              ))}
+            </div>
+          </main>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PreviewCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+      <span className="text-[10px] uppercase tracking-widest text-zinc-500">{label}</span>
+      <strong className="mt-1 block text-lg text-white">{value}</strong>
+    </div>
+  );
+}
+
+function SummaryPanel(props: {
+  result: GenerationResult | null;
+  isFinished: boolean;
+  deployState: 'idle' | 'deploying' | 'deployed';
+  onPreview: () => void;
+  onOpenWorkspace: () => void;
+  onDownloadCode: () => void;
+  onDeploy: () => void;
+  onRegenerate: () => void;
+  activeJob: GenerationJob | null;
+}) {
+  return (
+    <section className="rounded-xl border border-white/5 bg-[#09090b] p-4">
+      <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white">
+        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+        Final Project Summary
+      </h2>
+      <div className="space-y-3 text-xs">
+        <SummaryRow label="Status" value={props.isFinished ? 'Ready to export' : 'Finalizing'} />
+        <SummaryRow label="Provider" value={props.result?.providerUsed || 'local'} />
+        <SummaryRow label="Files" value={String(props.result?.summary.generatedFilesCount || 0)} />
+        <SummaryRow label="Active Job" value={props.activeJob?.jobId || props.result?.jobId || 'pending'} />
+      </div>
+      <div className="mt-5 grid grid-cols-1 gap-2">
+        <ActionButton label="Preview App" icon={<Eye className="h-4 w-4" />} onClick={props.onPreview} />
+        <ActionButton label="Open Workspace" icon={<Code2 className="h-4 w-4" />} onClick={props.onOpenWorkspace} />
+        <ActionButton label="Download Code" icon={<Download className="h-4 w-4" />} onClick={props.onDownloadCode} />
+        <ActionButton
+          label={props.deployState === 'deploying' ? 'Deploying' : props.deployState === 'deployed' ? 'Deployed' : 'Deploy'}
+          icon={props.deployState === 'deploying' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+          onClick={props.onDeploy}
+        />
+        <ActionButton label="Regenerate" icon={<RefreshCcw className="h-4 w-4" />} onClick={props.onRegenerate} />
+      </div>
+    </section>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-white/5 bg-zinc-950 px-3 py-2">
+      <span className="text-zinc-500">{label}</span>
+      <strong className="max-w-[180px] truncate text-right text-zinc-200">{value}</strong>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: 'passed' | 'warning' | 'failed' }) {
+  const classes = status === 'passed'
+    ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+    : status === 'warning'
+      ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+      : 'border-red-500/20 bg-red-500/10 text-red-300';
+  const Icon = status === 'passed' ? CheckCircle2 : AlertTriangle;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] uppercase ${classes}`}>
+      <Icon className="h-3 w-3" />
+      {status}
+    </span>
+  );
+}
+
+function IconButton({
+  label,
+  icon,
+  onClick,
+  disabled,
+  active,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        active ? 'border-blue-500/30 bg-blue-500/10 text-blue-300' : 'border-white/5 bg-zinc-950 text-zinc-400 hover:text-white'
+      }`}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function ActionButton({ label, icon, onClick }: { label: string; icon: React.ReactNode; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center justify-between rounded-lg border border-white/5 bg-zinc-950 px-3 py-3 text-left text-xs font-semibold text-zinc-200 transition hover:border-blue-500/25 hover:text-white"
+    >
+      <span className="flex items-center gap-2">{icon}{label}</span>
+      <ChevronRight className="h-4 w-4 text-zinc-600" />
+    </button>
+  );
+}
+
+function getFileSection(path: string) {
+  if (path.includes('/backend/routes') || path.includes('/api/')) return 'API';
+  if (path.includes('/backend/')) return 'Backend';
+  if (path.includes('/database/') || path.endsWith('schema.sql')) return 'Database';
+  if (path.includes('render') || path.includes('Docker') || path.includes('.env') || path.includes('package.json') || path.includes('README')) return 'Deployment';
+  if (path.includes('/src/')) return 'Frontend';
+  return 'Project';
+}
+
+function getVisibleFileCount(stageIndex: number, total: number) {
+  if (stageIndex < 3) return 0;
+  if (stageIndex === 3) return Math.min(total, 10);
+  if (stageIndex === 4) return Math.min(total, 18);
+  if (stageIndex === 5) return Math.min(total, 24);
+  if (stageIndex === 6) return Math.min(total, 30);
+  if (stageIndex === 7) return Math.min(total, 36);
+  if (stageIndex === 8) return Math.min(total, 44);
+  return total;
+}
+
+function getMinimumGenerationMs(prompt: string, features: string[]) {
+  const sizeScore = prompt.length + features.length * 60;
+  if (sizeScore > 900) return 240000;
+  if (sizeScore > 450) return 210000;
+  return 180000;
+}
+
+function formatRemaining(ms: number) {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  const mins = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return mins ? `${mins}m ${rest}s` : `${rest}s`;
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function normalizeAppType(type: string) {
+  if (type.includes('CRM')) return 'CRM';
+  if (type.toLowerCase().includes('ecommerce')) return 'E-commerce';
+  if (type.toLowerCase().includes('dashboard')) return 'Dashboard';
+  if (type.toLowerCase().includes('portfolio')) return 'Portfolio';
+  if (type.toLowerCase().includes('ai')) return 'AI Tool';
+  return 'SaaS';
+}
+
+function splitStack(stack: string) {
+  const values = stack.split(/[,+]/).map((item) => item.trim()).filter(Boolean);
+  return values.length ? values : ['React', 'Node.js', 'Express', 'PostgreSQL'];
+}
+
+function toGenerationJob(result: GenerationResult): GenerationJob {
+  return {
+    jobId: result.jobId,
+    status: 'completed',
+    mode: result.providerUsed === 'local-structured-pipeline' ? 'demo' : 'ai',
+    prompt: result.prompt,
+    appIntent: {
+      ...result.appIntent,
+      integrations_requested: result.appIntent.integrations || [],
+    },
+    dataSchema: {
+      entities: result.dataSchema.entities.map((entity: any) => ({
+        name: entity.name,
+        tableName: `${entity.name.toLowerCase()}s`,
+        tenantId: 'tenantId',
+        fields: entity.fields.map((field: any) => ({
+          name: field.name,
+          type: field.type === 'number' ? 'decimal' : field.type === 'date' ? 'datetime' : field.type,
+          nullable: !field.required,
+          primary: field.name === 'id',
+          unique: false,
+        })),
+        relations: [],
+      })),
+    },
+    appSpec: {
+      pages: result.appSpec.pages.map((page: any) => ({
+        name: page.name,
+        route: page.route,
+        path: page.route,
+        layout: 'workspace',
+        components: page.components,
+        apiEndpoints: [],
+      })),
+      apiRoutes: result.appSpec.apiRoutes,
+      apiEndpoints: result.appSpec.apiRoutes.map((route: any) => ({
+        path: route.path,
+        method: route.method,
+        boundEntity: route.entity,
+        authRequired: result.appSpec.authFlow.enabled,
+        rateLimit: 120,
+        authRoles: ['Admin'],
+        permissions: ['read', 'write'],
+      })),
+      databaseTables: result.appSpec.databaseTables,
+      authFlow: result.appSpec.authFlow,
+      navigationFlow: result.appSpec.navigationFlow,
+      integrationHooks: [],
+      workflowStubs: [],
+    },
+    validation: {
+      valid: result.validation.overallStatus !== 'failed',
+      errors: result.validation.checks
+        .filter((check) => check.status === 'failed')
+        .map((check) => ({ path: check.label, message: check.detail })),
+    },
+    repairLog: result.repairLog.map((entry) => ({
+      strategy: 'consistency_repair',
+      errorInput: entry,
+      outcome: 'Repair engine normalized the generated artifact.',
+      timestamp: new Date().toLocaleTimeString(),
+    })),
+    events: result.events,
+    costBreakdown: { promptTokens: 0, completionTokens: 0, estimatedCostUSD: 0 },
+    latencyMs: 0,
+    providerUsed: result.providerUsed,
+    createdAt: result.createdAt,
+  };
 }

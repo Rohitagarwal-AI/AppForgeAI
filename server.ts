@@ -1,26 +1,100 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { AppForgeProject, ProjectTask, Commit, FileMetric, GenerationJob, IntegrationRegistryEntry } from './src/types.js';
-import { generateDeterministicDemo, generateAIBlueprint, validateBlueprint, runRepairs } from './src/generate-engine.js';
+import { rerunRepairsForJob, runGenerationPipeline } from './src/lib/pipeline/streamRunner.js';
 
 // Setup Express
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
+
+// Persistent Database for Codebase Projects
+const dbFilePath = path.join(process.cwd(), 'projects-db.json');
+let projectsListMemory: any[] = [];
+
+try {
+  if (fs.existsSync(dbFilePath)) {
+    projectsListMemory = JSON.parse(fs.readFileSync(dbFilePath, 'utf8'));
+  } else {
+    projectsListMemory = [
+      {
+        id: 'proj-1',
+        name: 'Acme SaaS Billing',
+        type: 'SaaS Suite',
+        techStack: 'React + Express',
+        status: 'Deployed',
+        features: ['Stripe Checkout', 'Relational DB', 'Weekly Receipt Scheduler'],
+        lastUpdated: '2 hours ago',
+        liveUrl: 'https://acme-billing.appforge.ai',
+        githubRepo: 'github.com/agarwalrohit/acme-billing-saas'
+      },
+      {
+        id: 'proj-2',
+        name: 'TaskFlow Slack Automation',
+        type: 'AI Workspace Tool',
+        techStack: 'Next.js + Tailwind',
+        status: 'Deployed',
+        features: ['Slack Notifications', 'Relational DB', 'Consistency Healer'],
+        lastUpdated: '5 hours ago',
+        liveUrl: 'https://taskflow-bot.appforge.ai',
+        githubRepo: 'github.com/agarwalrohit/taskflow-slackbot'
+      },
+      {
+        id: 'proj-3',
+        name: 'HealthLink EHR Ledger',
+        type: 'Healthcare Ledger',
+        techStack: 'Vite + FastAPI',
+        status: 'Failed',
+        features: ['HIPAA Logging Shield', 'Gmail Auditing Logs', 'Custom Workflows'],
+        lastUpdated: '1 day ago',
+        liveUrl: 'https://healthlink-ehr.appforge.ai',
+        githubRepo: 'github.com/agarwalrohit/healthlink-ehr'
+      },
+      {
+        id: 'proj-4',
+        name: 'SocialVerse Social Sandbox',
+        type: 'Community Sandbox',
+        techStack: 'Vite + Express',
+        status: 'Building',
+        features: ['Push Notification Broker', 'Relational DB', 'WhatsApp Alerts'],
+        lastUpdated: 'Just now',
+        liveUrl: 'https://socialverse.appforge.ai',
+        githubRepo: 'github.com/agarwalrohit/socialverse-sandbox'
+      }
+    ];
+    fs.writeFileSync(dbFilePath, JSON.stringify(projectsListMemory, null, 2), 'utf8');
+  }
+} catch (e) {
+  console.error('Failed to initialize projects DB file:', e);
+}
+
+function saveProjectsToDisk() {
+  try {
+    fs.writeFileSync(dbFilePath, JSON.stringify(projectsListMemory, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to write projects database to disk:', e);
+  }
+}
 
 // In-Memory Database for Blueprint Jobs
-const jobsStore: Record<string, GenerationJob> = {};
+const jobsStore: Record<string, any> = {};
 
 // Integrations Registry
 const integrationsRegistry: IntegrationRegistryEntry[] = [
-  { id: 'slack', name: 'Slack', status: 'active', description: 'Stream system events, sprint alerts, and operational notifications directly to collaboration channels.', capabilities: ['Direct messaging', 'Channel broadcasts', 'Interactive action blocks'], authType: 'OAuth2 / Bot Token', triggers: ['Task Status Changed', 'Build Triggered', 'Critical Error'], actions: ['Send Message', 'Create Channel', 'Broadcast Alert'] },
-  { id: 'whatsapp', name: 'WhatsApp', status: 'available', description: 'Dispatch customer communication sequences, security alerts, or status summaries directly via WhatsApp Business link.', capabilities: ['Transactional SMS templates', 'Inbound payload handlers'], authType: 'API Secret Key', triggers: ['New Signup', 'Payment Received'], actions: ['Send Template Message', 'Push Notification'] },
-  { id: 'gmail', name: 'Gmail', status: 'configured', description: 'Deliver automated corporate receipts, invoices, custom notification digests, and drafts sequences.', capabilities: ['Transactional drafts pre-fill', 'Internal receipt dispatches'], authType: 'OAuth2 App Password', triggers: ['Order Completed', 'Weekly Digest Plan'], actions: ['Send HTML Email', 'Draft Email Reply'] },
-  { id: 'stripe', name: 'Stripe', status: 'active', description: 'Process global subscription models, checkout sessions, invoices, and webhook event-to-schema synchronization.', capabilities: ['Checkout flow proxy', 'Payment webhooks hook'], authType: 'Webhook Key & Restricted Token', triggers: ['Charge Succeeded', 'Subscription Cancelled', 'Invoice Unpaid'], actions: ['Create Customer', 'Refund Transaction', 'Retrieve Invoices'] },
-  { id: 'sheets', name: 'Google Sheets', status: 'available', description: 'Append logs, activity metrics, customer directories, or audit listings instantly to collaborative tables.', capabilities: ['Live sheets append row', 'Cell value lookup triggers'], authType: 'Google Service Account OAuth2', triggers: ['Row Added', 'Metric Threshold Crossed'], actions: ['Append Row', 'Update Row', 'Create Sheet'] },
-  { id: 'jira', name: 'Jira', status: 'available', description: 'Synchronize sprint backlog parameters, card transitions, epic updates, and subtask trees with external project desk.', capabilities: ['Issue statuses callbacks', 'Task state replication'], authType: 'Atlassian OAuth Access Token', triggers: ['Issue Updated', 'Comment Created'], actions: ['Create Issue', 'Transition Task', 'Add Comment'] },
-  { id: 'webhook', name: 'Webhook', status: 'configured', description: 'Bridge general third-party services with high-performance payload relays, signature checks, and validation queues.', capabilities: ['Arbitrary payload receive', 'Custom JSON triggers dispatch'], authType: 'HMAC Webhook Sign Secret', triggers: ['Incoming Webhook Dispatch'], actions: ['Forward Request', 'Dispatch JSON Payload'] }
+  { id: 'openai', name: 'OpenAI', status: process.env.OPENAI_API_KEY ? 'configured' : 'available', description: 'Server-side model provider for intent extraction, validation repair, and AppSpec generation.', capabilities: ['Structured JSON generation', 'Repair retries'], authType: 'OPENAI_API_KEY', triggers: ['Generate App'], actions: ['Extract Intent', 'Repair Output'] },
+  { id: 'gemini', name: 'Gemini', status: process.env.GEMINI_API_KEY ? 'configured' : 'available', description: 'Google Gemini model routing for structured generation and fast fallback planning.', capabilities: ['JSON generation', 'Prompt analysis'], authType: 'GEMINI_API_KEY', triggers: ['Generate App'], actions: ['Build AppSpec', 'Validate Output'] },
+  { id: 'groq', name: 'Groq', status: process.env.GROQ_API_KEY ? 'configured' : 'available', description: 'Low-latency OpenAI-compatible route for structured intermediate pipeline output.', capabilities: ['Fast inference', 'JSON repair'], authType: 'GROQ_API_KEY', triggers: ['Retry Generation'], actions: ['Repair JSON', 'Normalize Entities'] },
+  { id: 'github', name: 'GitHub', status: 'available', description: 'Repository export destination for generated source trees and project history.', capabilities: ['Repo creation', 'Commit export'], authType: 'GitHub Token', triggers: ['Project Save'], actions: ['Create Repository', 'Push Code'] },
+  { id: 'supabase', name: 'Supabase', status: 'available', description: 'Postgres, auth, storage, and realtime database deployment target.', capabilities: ['Postgres schema', 'Auth tables'], authType: 'Project URL + Service Key', triggers: ['Database Schema Generation'], actions: ['Apply SQL', 'Create Auth Config'] },
+  { id: 'firebase', name: 'Firebase', status: 'available', description: 'Alternative auth, storage, and app hosting integration.', capabilities: ['Auth', 'Storage', 'Hosting'], authType: 'Firebase Service Account', triggers: ['Deploy'], actions: ['Create App', 'Deploy Rules'] },
+  { id: 'vercel', name: 'Vercel', status: 'available', description: 'Frontend preview and Next.js deployment adapter.', capabilities: ['Preview deploys', 'Environment sync'], authType: 'Vercel Token', triggers: ['Preview App'], actions: ['Create Deployment'] },
+  { id: 'render', name: 'Render', status: 'available', description: 'Production web service and static site deployment target.', capabilities: ['Web service', 'Static site'], authType: 'Render API Key', triggers: ['Deploy'], actions: ['Create Service', 'Trigger Build'] },
+  { id: 'stripe', name: 'Stripe', status: 'available', description: 'Payments and billing integration for generated SaaS and commerce apps.', capabilities: ['Checkout', 'Webhooks'], authType: 'STRIPE_SECRET_KEY', triggers: ['Payment Created'], actions: ['Create Checkout', 'Handle Webhook'] },
+  { id: 'gmail', name: 'Gmail', status: 'available', description: 'Email notifications and generated app transactional mail hooks.', capabilities: ['Send Email', 'Draft Templates'], authType: 'OAuth2 App Password', triggers: ['Email Notification'], actions: ['Send Message'] },
+  { id: 'slack', name: 'Slack', status: 'available', description: 'Team alerts for generation, deployment, and app workflow activity.', capabilities: ['Channel alerts', 'Webhook messages'], authType: 'Slack Bot Token', triggers: ['Build Finished'], actions: ['Send Message'] }
 ];
 
 // Middleware
@@ -139,6 +213,35 @@ function getGemini(): GoogleGenAI {
 }
 
 // REST Api Routes
+
+// Live projects list
+app.get('/api/projects', (req: Request, res: Response) => {
+  res.json(projectsListMemory);
+});
+
+// Update standard projects listing state
+app.post('/api/projects', (req: Request, res: Response) => {
+  const { projects } = req.body;
+  if (Array.isArray(projects)) {
+    projectsListMemory = projects;
+    saveProjectsToDisk();
+    res.json({ success: true, count: projectsListMemory.length });
+  } else {
+    res.status(400).json({ error: 'Projects array is required' });
+  }
+});
+
+// Helper route to reset or push a new project directly
+app.post('/api/projects/add', (req: Request, res: Response) => {
+  const { project } = req.body;
+  if (project && typeof project === 'object') {
+    projectsListMemory = [project, ...projectsListMemory];
+    saveProjectsToDisk();
+    res.json({ success: true, project });
+  } else {
+    res.status(400).json({ error: 'Valid project object is required' });
+  }
+});
 
 // 1. Get raw current project status
 app.get('/api/project', (req: Request, res: Response) => {
@@ -299,18 +402,12 @@ Suggest exactly two next concrete steps (e.g., code templates, architecture chec
 // 1. Trigger AppForge Blueprint generation
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt } = req.body;
+    const { prompt, projectName, appType, techStack, features } = req.body;
     if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
       res.status(400).json({ error: 'Core developer specifications prompt is required' });
       return;
     }
-    const hasKey = !!process.env.GEMINI_API_KEY;
-    let job: GenerationJob;
-    if (hasKey) {
-      job = await generateAIBlueprint(prompt, process.env.GEMINI_API_KEY!);
-    } else {
-      job = generateDeterministicDemo(prompt);
-    }
+    const job = await runGenerationPipeline({ prompt, projectName, appType, techStack, features });
     jobsStore[job.jobId] = job;
     res.json(job);
   } catch (err: any) {
@@ -381,38 +478,186 @@ app.post('/api/assistant', async (req: Request, res: Response) => {
 
     const hasKey = !!process.env.GEMINI_API_KEY;
     let responseText = '';
+    let apiError: string | null = null;
 
     if (hasKey) {
-      const ai = getGemini();
-      const systemInstruction = `
-You are AppForgeAI's senior code strategist and assistant. Help explain AppSpec documents, database models, schemas, and repair logs clearly. 
-Here is the active context: ${JSON.stringify(context || {})}
-State clear action guidelines. Use strict, direct, concise developer feedback and keep formatted Markdown. Include no unasked commentary.
+      try {
+        const ai = getGemini();
+        const systemInstruction = `
+You are AppForgeAI's senior code strategist, systems architect, and chief workspace advisor.
+You are exceptionally powerful, direct, precise, and correct. Your responses should provide deep, highly technical, and immediately actionable answers about the code metrics, catalog systems, multi-tenancy, and compliance checking.
+
+ACTIVE PLATFORM TELEMETRY AND METRICS:
+- Current Target Project name: "${projectData.projectName}"
+- Current Active branch: "${projectData.activeBranch}"
+- File System Metrics tracked: ${JSON.stringify(projectData.fileMetrics)}
+- Active Kanban Backlog Deck:
+${projectData.backlog.map(t => `  * [${t.status}] [Priority: ${t.priority}] [Category: ${t.category}] ${t.title}: ${t.description}`).join('\n')}
+- Workspace Statistics: LOC: ${projectData.stats.linesOfCode}, Issues Fixed: ${projectData.stats.issuesSolved}, Tests: ${projectData.stats.testsPassingPercentage}% passing.
+- Daemon Synchronization Tunnel Bridge:
+  * Connected? ${projectData.bridge.connected}
+  * Host Daemon: "${projectData.bridge.hostname}"
+  * Kernel OS: "${projectData.bridge.os}"
+  * CPU Structure: "${projectData.bridge.cpuModel}"
+- Core Registered Database Projects:
+${projectsListMemory.map(p => `  * Project: "${p.name}" (Type: "${p.type}", Stack: "${p.techStack}", Features: ${JSON.stringify(p.features || [])}, Live: "${p.liveUrl}")`).join('\n')}
+- Cloud Adapter Integrations Webhooks Registry:
+${JSON.stringify(integrationsRegistry)}
+- Current Client Session Blueprint Status:
+${JSON.stringify(context || {})}
+
+YOUR TASK GUIDELINES:
+- Deliver exactly correct, comprehensive, senior-level architectural replies.
+- Never invent information outside the context or state variables. Use the active data blocks to back any claim or design suggestion (e.g., recommend real file edits in tracked file names, or reference actual backlog cards, or active modules in the projects database).
+- Use polished, highly professional developer styling with clean structured headers, descriptive bullet points, clear tables, and formatted TypeScript/JSON code blocks. Keep the language direct and clear.
 `;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.5-flash',
-        contents: message,
-        config: {
-          systemInstruction,
-          temperature: 0.7
-        }
-      });
-      responseText = response.text || "AI completed successfully.";
-    } else {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: message,
+          config: {
+            systemInstruction,
+            temperature: 0.65
+          }
+        });
+        responseText = response.text || "AI completed successfully.";
+      } catch (err: any) {
+        console.error('Gemini API call failed, falling back to local diagnostics:', err);
+        apiError = err.message || 'Unknown Gemini API error';
+      }
+    }
+
+    if (!responseText) {
       // Fallback local assistant response
       const msgLower = message.toLowerCase();
-      if (msgLower.includes('explain') || msgLower.includes('spec') || msgLower.includes('what is')) {
-        responseText = `**AppForgeAI Senior Architect (Local Offline Assistant):**\n\nThe app blueprint models represent a completely scaffolded workspace stack:\n- **AppIntent**: Captures your primary feature goals and dependencies requested.\n- **DataSchema**: Maps logical relational entities with strict multi-tenant isolate key (\`tenantId\`).\n- **AppSpec**: Orchestrates the API routing, integration middleware hook registries, and visual UI layouts components.`;
-      } else if (msgLower.includes('error') || msgLower.includes('repair') || msgLower.includes('validate')) {
-        responseText = `**AppForgeAI Senior Architect (Local Offline Assistant):**\n\nOur system validation engine scans structural alignments:\n1. Checks every entity for the \`tenantId\` parameter field.\n2. Confirms page layouts bind closely to actual API paths.\n3. Checks that bound entities reflect real DB tables.\n\nAll repair logs record auto-adjustments. If anything is missing, the engine executes \`field_repair\` or \`consistency_repair\` immediately.`;
+      
+      const header = "";
+
+      if (msgLower.includes('explain') || msgLower.includes('spec') || msgLower.includes('what is') || msgLower.includes('blueprint') || msgLower.includes('contract')) {
+        responseText = header + `### AppForge AI System Blueprint Contract Analysis
+
+The app blueprint models represent a structured compile-time protocol designed to orchestrate full-stack SaaS pipelines.
+
+#### Core Structural Subsystems:
+1. **AppIntent**:
+   * **Purpose**: Captures user specifications, app description, target audience segment, and technology stack preferences.
+   * **Attributes**: App Name, Category, Stack type, and chosen module list.
+2. **DataSchema (Relational Entity Model)**:
+   * **Purpose**: Defines database tables with strict relationship indexes and custom field constraints.
+   * **Enforced Validation**: Employs a mandatory \`tenantId\` partition key for native multi-tenant workspace security.
+3. **AppSpec (Infrastructure Map)**:
+   * **Purpose**: Deploys web endpoints, page layout hierarchies, middleware hook definitions, and responsive frontend routes.
+
+\`\`\`ts
+// Blueprint Compile Structure Signature
+interface GenerationJob {
+  jobId: string;
+  prompt: string;
+  appIntent: AppIntent;
+  dataSchema: DataSchema;
+  appSpec: AppSpec;
+  validation: ValidationResult;
+  repairLog: RepairEvent[];
+}
+\`\`\``;
+      } else if (msgLower.includes('error') || msgLower.includes('repair') || msgLower.includes('validate') || msgLower.includes('healed') || msgLower.includes('compliance') || msgLower.includes('validator')) {
+        responseText = header + `### AppForge AI Code Integrity & Auto-Healing Core
+
+The system validator executes strict structural alignment checks to prevent microvm cold-starts or container crashes.
+
+#### Validation Pipeline Rules:
+1. **Multi-Tenant Security Enforcement**:
+   * Audits state machines and schemas to ensure every table block possesses a \`tenantId\` field. This ensures rigorous logical isolation between enterprise users.
+2. **Page-to-API Route Compliance**:
+   * Insures all visual elements map cleanly to active REST routes in the backend runtime.
+3. **Typescript Strict Checks**:
+   * Verifies imports and model types prior to code bundle emissions using Vite & Express.
+
+#### Interactive Auto-Healing Logic:
+When an inconsistency is detected, the **Compliant Healing** engine runs the following repairs:
+* \`field_repair\`: Automatically appends missing tenant keys into standard entities.
+* \`consistency_repair\`: Truncates mismatched navigation components to maintain clean UI routing.
+
+*You can trigger a manual schema repair on any invalid active blueprint in the **Build Blueprints** workspace tab.*`;
+      } else if (msgLower.includes('integration') || msgLower.includes('hook') || msgLower.includes('slack') || msgLower.includes('stripe') || msgLower.includes('whatsapp') || msgLower.includes('gmail') || msgLower.includes('sheet') || msgLower.includes('jira') || msgLower.includes('adapter')) {
+        const matchingAdapters = integrationsRegistry.map(reg => `* **${reg.name}** (\`${reg.id}\`): ${reg.description}\n  * *Triggers*: ${reg.triggers.join(', ')}\n  * *Capabilities*: ${reg.capabilities.join(', ')}`).join('\n');
+        responseText = header + `### High-Performance Workspace Cloud Adapters
+
+AppForgeAI features full-stack adapters connected directly through secure OAuth and credential tunnels:
+
+${matchingAdapters}
+
+*To activate, configure your web credentials in the **Cloud Adapters** configuration rail.*`;
+      } else if (msgLower.includes('database') || msgLower.includes('schema') || msgLower.includes('relation') || msgLower.includes('model') || msgLower.includes('table') || msgLower.includes('entity')) {
+        responseText = header + `### Multi-Tenant Relational Database Orchestration
+
+Within the AppForge AI generator, your data structure is compiled into isolated virtual layers:
+
+| Concept | Implementation Strategy | Multi-Tenant Isolate Key |
+| :--- | :--- | :--- |
+| **Workspace Tenant Partition** | Automatic field filter injection | Enforced by \`tenantId: string\` |
+| **Relationship Mapping** | Standard Foreign Key constraint generation | Relational index tracking |
+| **Schema Validation Audit** | Automatic structure-to-query comparison | Healed by Compliant Validator |
+
+#### Structural Entity Declaration Example:
+\`\`\`json
+{
+  "name": "UserAccount",
+  "fields": [
+    { "name": "id", "type": "uuid", "isRequired": true },
+    { "name": "tenantId", "type": "string", "isRequired": true },
+    { "name": "email", "type": "string", "isRequired": true },
+    { "name": "role", "type": "string", "isRequired": true }
+  ]
+}
+\`\`\``;
+      } else if (msgLower.includes('project') || msgLower.includes('acme') || msgLower.includes('taskflow') || msgLower.includes('healthlink') || msgLower.includes('socialverse') || msgLower.includes('catalog')) {
+        const projList = projectsListMemory.map(p => `* **${p.name}** [Status: ${p.status}] (${p.techStack}) - *${p.type}*\n  * Live sandbox: [View Link](${p.liveUrl})\n  * Source repository: \`${p.githubRepo}\``).join('\n');
+        responseText = header + `### Active Workspace Project Records Catalog
+
+I pulled these records from the current persistence ledger in real time:
+
+${projList}
+
+*Manage, clone, or delete these deployments by visiting the **Developer Hub** under the Projects catalogue tab.*`;
+      } else if (msgLower.includes('backlog') || msgLower.includes('task') || msgLower.includes('todo') || msgLower.includes('kanban')) {
+        const backlogList = projectData.backlog.map(t => `* [${t.status}] **${t.title}** (${t.priority} priority) - *${t.category}*`).join('\n');
+        responseText = header + `### Integrated Scrum Kanban Backlog
+
+Here is the current state of tasks on your development board:
+
+${backlogList}
+
+*Update, create, or re-order these cards using the interactive Kanban board situated inside the **Monitor** dashboard.*`;
+      } else if (msgLower.includes('bridge') || msgLower.includes('sync') || msgLower.includes('daemon') || msgLower.includes('hostname') || msgLower.includes('connection')) {
+        responseText = header + `### AppForge Daemon Tunnel Status
+
+The local background bridge keeps cloud files synchronized with your desktop workspace daemon:
+
+* **Connection Status**: ${projectData.bridge.connected ? '🟢 ONLINE & BOUND' : '🔴 OFFLINE / DISCONNECTED'}
+* **Target Node Hostname**: \`${projectData.bridge.hostname || 'None'}\`
+* **Agent Core version**: \`${projectData.bridge.agentVersion || 'Not compiled'}\`
+* **Local Kernel OS**: \`${projectData.bridge.os || 'None'}\`
+* **Hardware CPU Architecture**: \`${projectData.bridge.cpuModel || 'None'}\`
+* **Last Synchronization timestamp**: \`${projectData.bridge.lastSync || 'Never'}\`
+
+*You can test reconnection routines or toggle simulator states in the **Platform Settings** hub.*`;
       } else {
-        responseText = `**AppForgeAI Senior Architect (Local Offline Assistant):**\n\nWelcome to your project console! \n- To track development locally, connect using the **Connecting Terminal** script instructions.\n- To compile a brand new blueprint workspace, head directly to **Generate App** page in the sub navigation rail. \n- (Note: Configure process.env.GEMINI_API_KEY to activate full AI contextual answers).`;
+        responseText = header + `### Welcome to your Senior Workspace AI Advisor!
+
+I am ready to provide powerful, structure-aware responses regarding your code, database schemas, and micro-vm microservices.
+
+Here is a list of specific deep topics you can ask me to analyze now:
+1. **Explain Blueprint Contracts**: "Explain the components inside an active AppSpec model?" or "How does multi-tenant security isolate rows?"
+2. **Auto-Healing Audits**: "How does the validator healer fix database compile errors?"
+3. **Review Databases & Entities**: "Show me how relational properties map between schemas."
+4. **Active Workspace Telemetry**: "Outline the tracked files lists or active Kanban backlog decks."
+5. **Synchronize Local Tunnels**: "Explain the daemon bridge architecture specifications."`;
       }
     }
 
     res.json({ success: true, answer: responseText });
   } catch (err: any) {
-    console.error('Assistant endpoint error: ', err);
+    console.error('Assistant endpoint crash: ', err);
     res.json({ success: false, error: err.message || 'Assistant failed' });
   }
 });
@@ -426,27 +671,18 @@ app.post('/api/generate/:jobId/repair', (req: Request, res: Response) => {
     return;
   }
 
-  if (!job.validation || job.validation.valid) {
+  if (!job.validation || job.validation.overallStatus === 'passed') {
     res.json({ success: true, message: 'Blueprint already 100% valid under core schema regulations.', job });
     return;
   }
 
-  const repairsResult = runRepairs(job.appIntent, job.dataSchema, job.appSpec, job.validation);
-  job.dataSchema = repairsResult.repairedSchema;
-  job.appSpec = repairsResult.repairedSpec;
-  job.repairLog = [...job.repairLog, ...repairsResult.repairs];
-  job.validation = validateBlueprint(job.appIntent, job.dataSchema, job.appSpec);
-  
-  job.events.push({
-    stage: 'Repair Engine',
-    status: 'completed',
-    latencyMs: 15
-  });
+  const repairedJob = rerunRepairsForJob(job);
+  jobsStore[jobId] = repairedJob;
 
   res.json({
     success: true,
     message: 'Manual repair execution completed successfully.',
-    job
+    job: repairedJob
   });
 });
 

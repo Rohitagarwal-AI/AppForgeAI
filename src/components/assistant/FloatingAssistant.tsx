@@ -97,16 +97,24 @@ export default function FloatingAssistant({ activeJob }: FloatingAssistantProps)
         } else {
           setMessages(prev => [
             ...prev,
-            { sender: 'assistant', text: "Review engine connection bottleneck. Please try stating your prompt guidelines again shortly.", timestamp: new Date() }
+            { 
+              sender: 'assistant', 
+              text: `⚠️ **Workspace AI Engine Alert**\n\n${data.error || "Review engine connection bottleneck."}\n\n*General Advisor Status: Standard offline model loaded (Telemetry Code: GEMINI_PENDING_SECRETS)*\n\nPlease activate real-time answers by defining process.env.GEMINI_API_KEY inside the **Settings > Secrets** panel.`, 
+              timestamp: new Date() 
+            }
           ]);
         }
       } else {
-        throw new Error();
+        throw new Error("HTTP connection failed status");
       }
-    } catch (e) {
+    } catch (e: any) {
       setMessages(prev => [
         ...prev,
-        { sender: 'assistant', text: "Deep architectural indexing failed. Please verify that package parameters bind correctly.", timestamp: new Date() }
+        { 
+          sender: 'assistant', 
+          text: `⚠️ **Deep architectural indexing failed**\n\n*Error details: ${e?.message || "Verify package parameters bind correctly."}*\n\nPlease confirm that your local background server is running on port 3000.`, 
+          timestamp: new Date() 
+        }
       ]);
     } finally {
       setSending(false);

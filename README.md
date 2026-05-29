@@ -1,92 +1,78 @@
 # AppForgeAI
 
-AppForgeAI is an AI-powered application generation and project monitoring workspace. It combines a React dashboard, an Express API server, Gemini-backed blueprint generation, validation and repair logic, integration tracking, cost analytics, pipeline logs, Git history, and a local bridge for syncing project telemetry.
+AppForgeAI is a generator-first, AI-native software creation platform. It turns a natural-language app idea into a structured, validated, repairable full-stack project pipeline rather than a raw chatbot response.
 
-## What It Does
+## What It Generates
 
-- Generates structured app blueprints from natural language prompts.
-- Produces intent, data schema, API, page, workflow, and integration specifications.
-- Validates generated blueprints with Zod and custom consistency checks.
-- Repairs common blueprint issues before presenting the final output.
-- Tracks generated jobs, pipeline activity, evaluation results, and estimated costs.
-- Shows project health, file metrics, Git history, sprint backlog, and bridge status.
-- Provides an integration registry for Slack, WhatsApp, Gmail, Stripe, Google Sheets, Jira, and generic webhooks.
-- Includes a floating assistant for reviewing and explaining generated work.
+- AppIntent, DataSchema, and AppSpec contracts
+- Frontend source files and UI component structure
+- Backend routes, controllers, middleware, and API structure
+- Database schema and model mapping
+- Validation results, repair logs, and activity logs
+- File tree, Monaco code viewer, preview panel, and ZIP export
 
-## Tech Stack
+## Pipeline
 
-- React 19
-- TypeScript
-- Vite
-- Express
-- Tailwind CSS
-- Google Gemini API
-- Zod
-- Lucide React icons
+Prompt -> Understanding Prompt -> Planning App Architecture -> Designing Database Schema -> Generating Frontend -> Generating Backend -> Creating API Routes -> Adding Authentication -> Creating UI Polish -> Building Deployment Files -> Final Review -> Preview Ready
 
-## Project Structure
-
-```text
-.
-|-- server.ts                 # Express API server and Vite dev middleware
-|-- src/App.tsx               # Main AppForgeAI workspace UI
-|-- src/generate-engine.ts    # Blueprint generation, validation, and repair logic
-|-- src/components/           # Dashboard, generator, logs, settings, bridge, and Git UI
-|-- src/types.ts              # Shared AppForgeAI data models
-|-- index.html                # Vite entry HTML
-|-- vite.config.ts            # Vite configuration
-`-- package.json              # Scripts and dependencies
-```
-
-## Getting Started
-
-Install dependencies:
+## Local Development
 
 ```bash
 npm install
-```
-
-Create a local environment file and add your Gemini API key:
-
-```bash
-GEMINI_API_KEY=your_gemini_api_key
-```
-
-Run the development server:
-
-```bash
 npm run dev
 ```
 
-Open the app at:
+The Express server hosts backend API routes and Vite middleware in development.
 
-```text
-http://localhost:3000
-```
-
-## Scripts
+## Production Build
 
 ```bash
-npm run dev      # Start the Express and Vite development server
-npm run lint     # Run TypeScript checks
-npm run build    # Build the frontend and bundled server
-npm run start    # Start the production server from dist/server.cjs
-npm run clean    # Remove generated build output
+npm run lint
+npm run build
+npm start
 ```
 
-## Core Views
+## Environment Variables
 
-- Dashboard: project status, history, and generation overview.
-- Generate App: prompt-driven blueprint generation workflow.
-- Pipeline Logs: generated job and stage activity.
-- Integrations: available service integrations and capabilities.
-- Evaluation Logs: validation and repair history.
-- Cost Analytics: estimated generation usage and cost summaries.
-- Settings: workspace and bridge controls.
-- Connecting Terminal: local bridge setup and sync status.
-- Sprint Backlog: task board for project work.
-- Git History: recent commit activity and active branch details.
+Copy `.env.example` to `.env.local` for local development. Provider keys are read only by the server:
 
-## Notes
+```bash
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+GROQ_API_KEY=
+ANTHROPIC_API_KEY=
+OPENROUTER_API_KEY=
+MISTRAL_API_KEY=
+DEEPSEEK_API_KEY=
+NODE_ENV=production
+PORT=3000
+```
 
-AppForgeAI runs with in-memory project and job state during local development. Generated data resets when the server restarts unless it is synced or persisted by future storage work.
+Never expose provider keys in frontend code.
+
+## Render Deployment
+
+Recommended: deploy as a Render Web Service so `/api/generate` works.
+
+- Build Command: `npm install && npm run build`
+- Start Command: `npm start`
+- Environment: `NODE_ENV=production`
+
+The included `render.yaml` can be used as a Render Blueprint.
+
+## Static Site Option
+
+For frontend-only inspection:
+
+- Build Command: `npm install && npm run build`
+- Publish Directory: `dist`
+
+The generation API requires the Express server, so static hosting alone is not enough for full product behavior.
+
+## Deployment Troubleshooting
+
+- Build fails: run `npm run lint` and fix TypeScript diagnostics first.
+- Render port issue: ensure `PORT` is available and `npm start` runs `dist/server.cjs`.
+- API route returns 500: verify provider keys or rely on the local structured fallback.
+- Blank frontend: confirm `dist/index.html` is generated by `npm run build`.
+- Large JS chunk warning: Monaco is bundled for the code viewer; it is a warning, not a deployment blocker.

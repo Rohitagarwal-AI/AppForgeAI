@@ -1,6 +1,6 @@
 {
   "name": "AppForgeAI Project Tracker",
-  "description": "Real-time desktop-sync developer dashboard and status tracker for the AppForgeAI project.",
+  "description": "Premium multi-tenant AI app compiler and generator that compiles full-stack code bases, database schemas, and live previews from natural prompt descriptions.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
