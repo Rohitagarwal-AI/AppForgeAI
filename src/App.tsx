@@ -167,6 +167,16 @@ export default function App() {
     });
   };
 
+  const fallbackProject = {
+    projectName: 'appforgeai',
+    activeBranch: 'main',
+    commitHistory: [],
+    fileMetrics: [],
+    backlog: [],
+    stats: { totalFiles: 0, linesOfCode: 0, issuesSolved: 0, testsPassingPercentage: 0 },
+    bridge: { connected: false, lastSync: null, agentVersion: null, hostname: null, os: null, cpuModel: null }
+  };
+
   // 1. Fetch live project coordinates from standard endpoint
   const fetchStatus = async () => {
     try {
@@ -177,16 +187,8 @@ export default function App() {
       const data = await response.json();
       setProject(data);
     } catch (e) {
-      console.warn('AppForge bridge syncing: Express server may be booting up.', e);
-      setProject({
-        projectName: 'appforgeai',
-        activeBranch: 'main',
-        commitHistory: [],
-        fileMetrics: [],
-        backlog: [],
-        stats: { totalFiles: 0, linesOfCode: 0, issuesSolved: 0, testsPassingPercentage: 0 },
-        bridge: { connected: false, lastSync: null, agentVersion: null, hostname: null, os: null, cpuModel: null }
-      });
+      console.warn('AppForge bridge syncing: Express server may be booting up or unavailable in production.', e);
+      setProject(prev => prev || fallbackProject);
     } finally {
       setLoading(false);
     }
@@ -194,6 +196,18 @@ export default function App() {
 
   useEffect(() => {
     fetchStatus();
+
+    // Force UI to load after 2s max to prevent infinite production loading
+    const safetyTimeout = setTimeout(() => {
+      setLoading(prevLoading => {
+        if (prevLoading) {
+          console.warn('AppForge workspace loaded in offline/demo mode due to startup timeout.');
+          setProject(prev => prev || fallbackProject);
+          return false;
+        }
+        return prevLoading;
+      });
+    }, 2000);
 
     // Setup active clock ticker adjusted for Indian Standard Time (IST)
     const clockInterval = setInterval(() => {
@@ -216,6 +230,7 @@ export default function App() {
     }, 12000);
 
     return () => {
+      clearTimeout(safetyTimeout);
       clearInterval(clockInterval);
       clearInterval(pollInterval);
     };
