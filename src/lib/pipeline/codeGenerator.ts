@@ -879,6 +879,205 @@ JWT_SECRET=
 - Frontend API error: set \`VITE_API_BASE_URL\` or deploy frontend and backend behind the same origin.
 `, 'Render deployment guide and troubleshooting checklist.');
 
+  add(files, 'generated-project/docs/SAAS_BLUEPRINT.md', 'markdown', `# ${intent.appName} SaaS Blueprint
+
+## Positioning
+${intent.appName} is generated as a production-oriented ${intent.appType} for ${intent.targetUsers.join(', ') || 'workspace teams'}.
+
+## Core Modules
+${intent.features.map((feature) => `- ${feature}: page, API, validation, and handoff notes`).join('\n')}
+
+## Enterprise Readiness
+- Multi-tenant data isolation: every production query should filter by tenant/workspace ownership.
+- Role-based access control: route permissions are described in \`docs/RBAC_MATRIX.md\`.
+- Auditability: sensitive write actions should call \`backend/services/auditLog.service.ts\`.
+- Reliability: API responses use consistent success and error envelopes.
+- Deployment: Render, environment, and CI notes are included in generated files.
+
+## Suggested Roadmap
+1. Replace demo auth with signed JWT or a managed identity provider.
+2. Connect controllers to PostgreSQL using \`DATABASE_URL\`.
+3. Add provider-specific integrations for requested hooks.
+4. Run the generated smoke, accessibility, and security checks before launch.
+`, 'Strategic SaaS product blueprint with enterprise readiness checklist.');
+
+  add(files, 'generated-project/docs/RBAC_MATRIX.md', 'markdown', `# RBAC Matrix
+
+| Capability | Owner | Admin | Manager | Staff |
+| --- | --- | --- | --- | --- |
+| View dashboard | yes | yes | yes | yes |
+| Manage ${primaryEntity} records | yes | yes | yes | limited |
+| Invite users | yes | yes | no | no |
+| Configure integrations | yes | yes | no | no |
+| Export data | yes | yes | no | no |
+| Change billing/security settings | yes | no | no | no |
+
+## Implementation Notes
+- Start from \`backend/middleware/rbac.ts\`.
+- Keep permissions server-side.
+- Mirror only user-friendly role labels in the frontend.
+- Log denied access attempts through the audit log service.
+`, 'Role and permission handoff matrix for SaaS security hardening.');
+
+  add(files, 'generated-project/docs/OBSERVABILITY_RUNBOOK.md', 'markdown', `# Observability Runbook
+
+## Signals to Track
+- Request count and latency per API route
+- Authentication failures and denied RBAC checks
+- Database query latency by generated entity
+- Integration webhook success/failure rates
+- Frontend error boundary captures
+
+## Incident Response
+1. Check Render service health and recent deploy logs.
+2. Inspect API errors by request ID.
+3. Verify environment variables are present.
+4. Confirm database connectivity and migration status.
+5. Roll back the last deploy if core routes are unavailable.
+
+## Recommended Alerts
+- API 5xx rate above 2 percent for 5 minutes
+- Login failures spike above normal baseline
+- Queue or webhook failures repeat more than 3 times
+- Database latency exceeds 500ms p95
+`, 'Operations runbook for production monitoring and incident response.');
+
+  add(files, 'generated-project/docs/TESTING_STRATEGY.md', 'markdown', `# Testing Strategy
+
+## Smoke Tests
+- App loads without a render crash.
+- Dashboard page displays generated entities.
+- Login route returns a structured response.
+- Protected routes reject missing auth.
+
+## API Tests
+${appSpec.apiRoutes.map((route) => `- ${route.method} ${route.path}: validates auth, body schema, and response envelope`).join('\n')}
+
+## Release Checklist
+- Run \`npm run lint\`.
+- Run \`npm run build\`.
+- Verify environment variables exist in production.
+- Check generated SQL before applying it to a live database.
+- Manually test desktop and mobile layouts.
+`, 'Practical test plan for frontend, backend, API, and release checks.');
+
+  add(files, 'generated-project/backend/middleware/rbac.ts', 'ts', `import { NextFunction, Request, Response } from 'express';
+
+type Role = 'owner' | 'admin' | 'manager' | 'staff';
+
+const roleRank: Record<Role, number> = {
+  owner: 4,
+  admin: 3,
+  manager: 2,
+  staff: 1,
+};
+
+export function requireRole(minimumRole: Role) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const role = (req.header('x-user-role') || 'staff').toLowerCase() as Role;
+    if (!roleRank[role] || roleRank[role] < roleRank[minimumRole]) {
+      res.status(403).json({
+        error: {
+          message: 'Insufficient permissions',
+          requiredRole: minimumRole,
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+    next();
+  };
+}
+`, 'Reusable RBAC middleware for generated protected routes.');
+
+  add(files, 'generated-project/backend/middleware/rateLimit.ts', 'ts', `import { NextFunction, Request, Response } from 'express';
+
+const buckets = new Map<string, { count: number; resetAt: number }>();
+
+export function rateLimit({ windowMs = 60_000, max = 120 } = {}) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const key = req.ip || req.header('x-forwarded-for') || 'anonymous';
+    const now = Date.now();
+    const bucket = buckets.get(key);
+
+    if (!bucket || bucket.resetAt < now) {
+      buckets.set(key, { count: 1, resetAt: now + windowMs });
+      next();
+      return;
+    }
+
+    bucket.count += 1;
+    if (bucket.count > max) {
+      res.status(429).json({
+        error: {
+          message: 'Rate limit exceeded',
+          requestId: req.requestId,
+        },
+      });
+      return;
+    }
+
+    next();
+  };
+}
+`, 'Simple in-memory rate limiter placeholder for production hardening.');
+
+  add(files, 'generated-project/backend/services/auditLog.service.ts', 'ts', `export interface AuditLogEntry {
+  actorId: string;
+  action: string;
+  entity: string;
+  entityId?: string;
+  tenantId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+const auditEntries: AuditLogEntry[] = [];
+
+export function recordAuditLog(entry: AuditLogEntry) {
+  const next = {
+    ...entry,
+    metadata: {
+      ...entry.metadata,
+      recordedAt: new Date().toISOString(),
+    },
+  };
+  auditEntries.push(next);
+  return next;
+}
+
+export function listAuditLogs() {
+  return auditEntries.slice(-250).reverse();
+}
+`, 'Audit log service stub for sensitive SaaS events.');
+
+  add(files, 'generated-project/database/seed.sql', 'sql', `insert into ${snake(pluralize(primaryEntity))} (id, name, status)
+values
+  ('demo_${snake(primaryEntity)}_1', 'Sample ${primaryEntity}', 'active')
+on conflict (id) do nothing;
+`, 'Demo seed data for first local database verification.');
+
+  add(files, 'generated-project/.github/workflows/ci.yml', 'yaml', `name: Generated SaaS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run lint
+      - run: npm run build
+`, 'GitHub Actions CI workflow for generated SaaS projects.');
+
   add(files, 'generated-project/database/schema.sql', 'sql', buildSql(dataSchema), 'PostgreSQL schema generated from DataSchema.');
 
   return files;

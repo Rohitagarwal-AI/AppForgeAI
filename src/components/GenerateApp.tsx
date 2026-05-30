@@ -43,17 +43,129 @@ const FEATURES = ['Authentication', 'Dashboard', 'Admin Panel', 'Payments', 'AI 
 
 const PIPELINE_STAGES = [
   'Understanding Prompt',
+  'Product Strategy Mapping',
+  'User Roles & Permissions',
   'Planning App Architecture',
   'Designing Database Schema',
+  'Multi-Tenant Data Rules',
+  'API Contract Planning',
   'Generating Frontend',
+  'Building Responsive UX System',
   'Generating Backend',
   'Creating API Routes',
   'Adding Authentication',
+  'RBAC & Security Hardening',
+  'Payments & Integrations Wiring',
   'Creating UI Polish',
+  'Audit Logs & Observability',
+  'Testing Strategy Generation',
   'Building Deployment Files',
+  'Documentation & Runbooks',
+  'Performance Review',
+  'Accessibility Review',
+  'Reliability Repair Pass',
   'Final Review',
   'Preview Ready',
 ];
+
+const PIPELINE_STAGE_DETAILS: Record<string, string[]> = {
+  'Understanding Prompt': [
+    'Parsing the business model, target users, workflows, and unclear requirements.',
+    'Normalizing the prompt into a structured AppIntent contract.',
+  ],
+  'Product Strategy Mapping': [
+    'Converting the idea into SaaS modules, core jobs-to-be-done, and success metrics.',
+    'Choosing the minimum lovable product surface plus upgrade paths.',
+  ],
+  'User Roles & Permissions': [
+    'Designing owner, admin, manager, and staff access patterns.',
+    'Mapping protected actions to route-level permission checks.',
+  ],
+  'Planning App Architecture': [
+    'Selecting frontend, backend, state, route, and deployment boundaries.',
+    'Preparing scalable folder structure and component ownership.',
+  ],
+  'Designing Database Schema': [
+    'Creating entities, fields, relations, indexes, and CRUD requirements.',
+    'Checking that each table can support real dashboard and reporting flows.',
+  ],
+  'Multi-Tenant Data Rules': [
+    'Adding tenant isolation assumptions, auditability, and least-privilege data access.',
+    'Checking generated entities for safe workspace partitioning.',
+  ],
+  'API Contract Planning': [
+    'Designing REST envelopes, validation boundaries, and route-to-entity mappings.',
+    'Preparing consistent success, error, auth, and metadata response shapes.',
+  ],
+  'Generating Frontend': [
+    'Creating the React shell, dashboard pages, UI primitives, and data modules.',
+    'Wiring generated pages to AppSpec navigation and app state.',
+  ],
+  'Building Responsive UX System': [
+    'Adding responsive layout guidance, empty states, loading states, and error recovery.',
+    'Checking the UI can explain what the generator produced.',
+  ],
+  'Generating Backend': [
+    'Creating Express server, controllers, middleware, and service boundaries.',
+    'Preparing backend modules for real database replacement later.',
+  ],
+  'Creating API Routes': [
+    'Binding generated entities to protected route files and API documentation.',
+    'Checking that every page has a usable data path.',
+  ],
+  'Adding Authentication': [
+    'Adding login route stubs, auth middleware, and frontend session helpers.',
+    'Marking which routes require backend identity checks.',
+  ],
+  'RBAC & Security Hardening': [
+    'Generating role matrix, RBAC middleware, rate limiting, and security notes.',
+    'Checking secrets remain server-side and deploy-safe.',
+  ],
+  'Payments & Integrations Wiring': [
+    'Preparing integration hooks for payments, email, Slack, or webhooks when requested.',
+    'Documenting where production provider keys and webhook secrets belong.',
+  ],
+  'Creating UI Polish': [
+    'Refining dashboard cards, nav structure, preview data, and code viewer clarity.',
+    'Ensuring generated output is readable, copyable, and exportable.',
+  ],
+  'Audit Logs & Observability': [
+    'Adding request IDs, audit log service stubs, and operational telemetry notes.',
+    'Preparing support workflows for debugging production incidents.',
+  ],
+  'Testing Strategy Generation': [
+    'Creating smoke, integration, accessibility, and release test plans.',
+    'Documenting how to validate generated source before deployment.',
+  ],
+  'Building Deployment Files': [
+    'Generating environment templates, Render config, build commands, and CI workflow.',
+    'Checking production start behavior and deployment notes.',
+  ],
+  'Documentation & Runbooks': [
+    'Writing README, architecture notes, API docs, deployment guide, and operations runbook.',
+    'Making handoff material clear enough for another developer to continue.',
+  ],
+  'Performance Review': [
+    'Checking bundle, API, database, and caching considerations for the generated SaaS.',
+    'Flagging the next optimizations for production load.',
+  ],
+  'Accessibility Review': [
+    'Checking semantic labels, keyboard paths, contrast, and responsive layout readiness.',
+    'Documenting accessibility checks for release QA.',
+  ],
+  'Reliability Repair Pass': [
+    'Running validation, repair rules, and consistency checks across contracts and files.',
+    'Ensuring generated output can still render if live AI/API is unavailable.',
+  ],
+  'Final Review': [
+    'Assembling final files, validation report, repair log, and project summary.',
+    'Preparing the generated code workspace for export.',
+  ],
+  'Preview Ready': [
+    'Opening the Code tab with complete generated files and a preview-ready summary.',
+    'Saving the result into state and project history.',
+  ],
+};
 
 type MainTab = 'generate' | 'projects' | 'integrations' | 'activity' | 'settings';
 type PreviewMode = 'desktop' | 'tablet' | 'mobile';
@@ -161,12 +273,12 @@ export default function GenerateApp({
   const allFiles = useMemo(() => Object.values(result?.files || {}), [result]);
   const visibleFiles = useMemo(() => allFiles.slice(0, Math.max(visibleFileCount, 0)), [allFiles, visibleFileCount]);
   const selectedFile = result?.files[selectedFilePath] || visibleFiles[0] || null;
-  const showIntent = Boolean(result && completedStageIndex >= 1);
-  const showSchema = Boolean(result && completedStageIndex >= 2);
-  const showSpec = Boolean(result && completedStageIndex >= 3);
-  const showValidation = Boolean(result && completedStageIndex >= 4);
-  const showFiles = Boolean(result && completedStageIndex >= 3);
-  const showPreview = Boolean(result && completedStageIndex >= 10);
+  const showIntent = Boolean(result && completedStageIndex >= getStageIndex('Understanding Prompt'));
+  const showSchema = Boolean(result && completedStageIndex >= getStageIndex('Designing Database Schema'));
+  const showSpec = Boolean(result && completedStageIndex >= getStageIndex('API Contract Planning'));
+  const showValidation = Boolean(result && completedStageIndex >= getStageIndex('Reliability Repair Pass'));
+  const showFiles = Boolean(result && completedStageIndex >= getStageIndex('Generating Frontend'));
+  const showPreview = Boolean(result && completedStageIndex >= PIPELINE_STAGES.length - 1);
   const isFinished = Boolean(result && completedStageIndex >= PIPELINE_STAGES.length - 1 && !generating);
 
   const pushLog = (message: string) => {
@@ -306,8 +418,10 @@ export default function GenerateApp({
 
       for (let index = 0; index < PIPELINE_STAGES.length; index += 1) {
         const stage = PIPELINE_STAGES[index];
+        const stageDetail = PIPELINE_STAGE_DETAILS[stage]?.[0];
         setCurrentStage(stage);
         pushLog(`Stage ${index + 1}/${PIPELINE_STAGES.length}: ${stage}`);
+        if (stageDetail) pushLog(`Phase focus: ${stageDetail}`);
         setEstimatedRemaining(formatRemaining((PIPELINE_STAGES.length - index - 1) * stageDelay));
 
         const nextVisibleFiles = getVisibleFileCount(index, Object.keys(payload.files || {}).length);
@@ -497,6 +611,7 @@ export default function GenerateApp({
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[360px_1fr]">
         <div className="space-y-6">
           <PipelineStepper completedStageIndex={completedStageIndex} currentStage={currentStage} />
+          <StageDetailPanel currentStage={currentStage} progress={progress} estimatedRemaining={estimatedRemaining} />
           <ActivityPanel logs={activityLogs.length ? activityLogs : result?.activityLogs || []} />
         </div>
 
@@ -621,6 +736,7 @@ function GeneratedOutputOverview({
     { label: 'Backend files', value: `${sectionCounts.Backend || 0} files` },
     { label: 'Database schema', value: `${sectionCounts.Database || 0} SQL file` },
     { label: 'API routes', value: `${sectionCounts.API || 0} docs/routes files` },
+    { label: 'Security & ops', value: `${(sectionCounts.Security || 0) + (sectionCounts.Operations || 0)} files` },
     { label: 'README/deployment notes', value: `${sectionCounts.Deployment || 0} files` },
   ];
 
@@ -828,6 +944,12 @@ function GeneratorForm(props: {
         </p>
       </motion.div>
 
+      <div className="grid grid-cols-1 gap-3 rounded-xl border border-blue-500/15 bg-blue-500/[0.06] p-4 md:grid-cols-3">
+        <GenerationModeCard label="Generation mode" value="Deep SaaS Compile" />
+        <GenerationModeCard label="Expected time" value="2-3 minutes" />
+        <GenerationModeCard label="Output depth" value="Code, API, DB, RBAC, CI, runbooks" />
+      </div>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_260px]">
         <label className="space-y-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Project Name</span>
@@ -910,6 +1032,15 @@ function GeneratorForm(props: {
   );
 }
 
+function GenerationModeCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-white/5 bg-zinc-950/80 p-3">
+      <span className="block text-[9px] font-bold uppercase tracking-widest text-zinc-600">{label}</span>
+      <strong className="mt-1 block text-xs text-blue-100">{value}</strong>
+    </div>
+  );
+}
+
 function TogglePill({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -955,6 +1086,55 @@ function PipelineStepper({ completedStageIndex, currentStage }: { completedStage
           );
         })}
       </div>
+    </section>
+  );
+}
+
+function StageDetailPanel({
+  currentStage,
+  progress,
+  estimatedRemaining,
+}: {
+  currentStage: string;
+  progress: number;
+  estimatedRemaining: string;
+}) {
+  const details = PIPELINE_STAGE_DETAILS[currentStage] || ['Preparing the next AppForgeAI compilation phase.'];
+
+  return (
+    <section className="rounded-xl border border-blue-500/15 bg-blue-500/[0.06] p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+          <Sparkles className="h-4 w-4 text-blue-300" />
+          Deep SaaS Compile Mode
+        </h2>
+        <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-blue-200">
+          2-3 min
+        </span>
+      </div>
+      <div className="mt-4 rounded-lg border border-white/5 bg-zinc-950/80 p-3">
+        <span className="block text-[9px] uppercase tracking-widest text-zinc-600">Current phase</span>
+        <strong className="mt-1 block text-sm text-white">{currentStage}</strong>
+        <p className="mt-2 text-xs leading-5 text-zinc-400">{details[0]}</p>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] font-mono">
+        <div className="rounded-lg border border-white/5 bg-zinc-950/80 p-3">
+          <span className="block uppercase tracking-widest text-zinc-600">Compile depth</span>
+          <strong className="mt-1 block text-zinc-200">Enterprise SaaS</strong>
+        </div>
+        <div className="rounded-lg border border-white/5 bg-zinc-950/80 p-3">
+          <span className="block uppercase tracking-widest text-zinc-600">Remaining</span>
+          <strong className="mt-1 block text-zinc-200">{estimatedRemaining || `${Math.max(0, 100 - progress)}%`}</strong>
+        </div>
+      </div>
+      <ul className="mt-3 space-y-1.5 text-[11px] leading-5 text-zinc-400">
+        {details.slice(1).map((detail) => (
+          <li key={detail} className="flex gap-2">
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300" />
+            <span>{detail}</span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -1254,6 +1434,8 @@ function ActionButton({ label, icon, onClick }: { label: string; icon: React.Rea
 
 function getFileSection(path: string) {
   if (path.includes('/backend/routes') || path.includes('/api/')) return 'API';
+  if (path.includes('/middleware/rbac') || path.includes('/middleware/rateLimit') || path.includes('/services/audit') || path.includes('SECURITY') || path.includes('RBAC')) return 'Security';
+  if (path.includes('RUNBOOK') || path.includes('OBSERVABILITY') || path.includes('TEST') || path.includes('/workflows/')) return 'Operations';
   if (path.includes('/backend/')) return 'Backend';
   if (path.includes('/database/') || path.endsWith('schema.sql')) return 'Database';
   if (path.includes('render') || path.includes('Docker') || path.includes('.env') || path.includes('package.json') || path.includes('README')) return 'Deployment';
@@ -1262,21 +1444,22 @@ function getFileSection(path: string) {
 }
 
 function getVisibleFileCount(stageIndex: number, total: number) {
-  if (stageIndex < 3) return 0;
-  if (stageIndex === 3) return Math.min(total, 10);
-  if (stageIndex === 4) return Math.min(total, 18);
-  if (stageIndex === 5) return Math.min(total, 24);
-  if (stageIndex === 6) return Math.min(total, 30);
-  if (stageIndex === 7) return Math.min(total, 36);
-  if (stageIndex === 8) return Math.min(total, 44);
-  return total;
+  const firstFileStage = getStageIndex('Generating Frontend');
+  if (stageIndex < firstFileStage) return 0;
+  if (stageIndex >= PIPELINE_STAGES.length - 1) return total;
+  const revealProgress = (stageIndex - firstFileStage + 1) / (PIPELINE_STAGES.length - firstFileStage);
+  return Math.min(total, Math.max(1, Math.ceil(total * revealProgress)));
 }
 
 function getMinimumGenerationMs(prompt: string, features: string[]) {
   const sizeScore = prompt.length + features.length * 60;
-  if (sizeScore > 900) return 6000;
-  if (sizeScore > 450) return 4000;
-  return 3000;
+  if (sizeScore > 1400) return 180000;
+  if (sizeScore > 800) return 165000;
+  return 135000;
+}
+
+function getStageIndex(stage: string) {
+  return Math.max(0, PIPELINE_STAGES.indexOf(stage));
 }
 
 function isUsableGenerationPayload(payload: any): payload is GenerationResult {
