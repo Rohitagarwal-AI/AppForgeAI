@@ -575,7 +575,7 @@ export default function GenerateApp({
         <Toast message={toast} />
       )}
 
-      {generationError && <ErrorBanner message={generationError} />}
+      
 
       <section className="rounded-xl border border-white/5 bg-[#09090b] p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
