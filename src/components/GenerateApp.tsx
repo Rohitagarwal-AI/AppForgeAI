@@ -1103,9 +1103,9 @@ function getVisibleFileCount(stageIndex: number, total: number) {
 
 function getMinimumGenerationMs(prompt: string, features: string[]) {
   const sizeScore = prompt.length + features.length * 60;
-  if (sizeScore > 900) return 240000;
-  if (sizeScore > 450) return 210000;
-  return 180000;
+  if (sizeScore > 900) return 6000;
+  if (sizeScore > 450) return 4000;
+  return 3000;
 }
 
 function formatRemaining(ms: number) {
