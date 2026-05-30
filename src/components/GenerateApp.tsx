@@ -35,6 +35,7 @@ import {
   Smartphone,
 } from 'lucide-react';
 import { GenerationJob } from '../types';
+import { runClientFallbackGeneration } from '../lib/pipeline/clientFallbackGenerator';
 
 const APP_TYPES = ['SaaS', 'CRM', 'E-commerce', 'Dashboard', 'Portfolio', 'AI Tool'];
 const TECH_STACKS = ['React', 'Next.js', 'Node.js', 'Express', 'Supabase', 'Firebase', 'PostgreSQL'];
@@ -142,6 +143,8 @@ export default function GenerateApp({
   const [toast, setToast] = useState<string | null>(null);
   const [codeNote, setCodeNote] = useState('');
   const [activeOutputTab, setActiveOutputTab] = useState<OutputTab>('code');
+  const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
 
   const previewRef = useRef<HTMLDivElement | null>(null);
 
@@ -175,6 +178,16 @@ export default function GenerateApp({
     window.setTimeout(() => setToast(null), 2600);
   };
 
+  const handleProjectNameChange = (value: string) => {
+    setProjectName(value);
+    if (validationMessage) setValidationMessage(null);
+  };
+
+  const handlePromptChange = (value: string) => {
+    setPrompt(value);
+    if (validationMessage) setValidationMessage(null);
+  };
+
   const toggleStack = (stack: string) => {
     setSelectedStack((prev) => {
       if (prev.includes(stack)) return prev.filter((item) => item !== stack);
@@ -195,13 +208,35 @@ export default function GenerateApp({
   };
 
   const startGeneration = async () => {
-    if (!prompt.trim() || !projectName.trim() || generating) return;
+    console.log('Generate clicked');
+    const trimmedPrompt = prompt.trim();
+    const trimmedProjectName = projectName.trim();
+    console.log('user prompt value', trimmedPrompt);
+
+    if (generating) return;
+
+    if (!trimmedPrompt) {
+      const message = 'Please describe the app you want AppForgeAI to generate.';
+      setValidationMessage(message);
+      setGenerationError(null);
+      showToast(message);
+      return;
+    }
+
+    if (!trimmedProjectName) {
+      const message = 'Please add a project name before generating.';
+      setValidationMessage(message);
+      setGenerationError(null);
+      showToast(message);
+      return;
+    }
 
     setGenerating(true);
     setResult(null);
     setProgress(0);
     setCompletedStageIndex(-1);
-    setCurrentStage('Starting');
+    setCurrentStage(PIPELINE_STAGES[0]);
+    setEstimatedRemaining('Starting');
     setVisibleFileCount(0);
     setRepairLog([]);
     setActivityLogs([]);
@@ -209,34 +244,65 @@ export default function GenerateApp({
     setDeployState('idle');
     setCodeNote('');
     setActiveOutputTab('code');
+    setValidationMessage(null);
+    setGenerationError(null);
+    setActiveTab?.('generate');
 
-    const minimumMs = getMinimumGenerationMs(prompt, selectedFeatures);
+    const minimumMs = getMinimumGenerationMs(trimmedPrompt, selectedFeatures);
     const stageDelay = Math.floor(minimumMs / PIPELINE_STAGES.length);
 
     try {
-      pushLog('Submitted prompt to server-side generation route');
-      const response = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt,
-          projectName,
+      console.log('generation started');
+      pushLog('Generate clicked');
+      pushLog(`Prompt received: ${trimmedPrompt}`);
+      pushLog('Generation started');
+      setProgress(4);
+
+      let payload: GenerationResult;
+      try {
+        pushLog('Submitted prompt to server-side generation route');
+        const response = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: trimmedPrompt,
+            projectName: trimmedProjectName,
+            appType,
+            techStack: selectedStack,
+            features: selectedFeatures,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          throw new Error(errorBody.error || `Generation failed with HTTP ${response.status}`);
+        }
+
+        payload = await response.json();
+        if (!isUsableGenerationPayload(payload)) {
+          throw new Error('Generation API returned no renderable files or app specification');
+        }
+      } catch (serverError: any) {
+        const serverMessage = serverError?.message || 'The live generation API did not respond.';
+        console.error('Live generation API failed, using fallback demo generator', serverError);
+        pushLog(`Live API unavailable: ${serverMessage}`);
+        pushLog('Starting fallback demo generator so output is still visible');
+        setGenerationError(`Live API unavailable: ${serverMessage}. Showing local demo output instead.`);
+        payload = await runClientFallbackGeneration({
+          prompt: trimmedPrompt,
+          projectName: trimmedProjectName,
           appType,
           techStack: selectedStack,
           features: selectedFeatures,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        throw new Error(errorBody.error || `Generation failed with HTTP ${response.status}`);
+        }) as GenerationResult;
       }
 
-      const payload: GenerationResult = await response.json();
+      console.log('generated result object', payload);
       setResult(payload);
       setRepairLog(payload.repairLog || []);
       const firstFile = Object.keys(payload.files || {})[0] || '';
       setSelectedFilePath(firstFile);
+      setActiveOutputTab('code');
 
       for (let index = 0; index < PIPELINE_STAGES.length; index += 1) {
         const stage = PIPELINE_STAGES[index];
@@ -255,6 +321,7 @@ export default function GenerateApp({
       setVisibleFileCount(Object.keys(payload.files || {}).length);
       setEstimatedRemaining('Complete');
       pushLog('Structured pipeline finished. Project saved and preview ready.');
+      console.log('generation completed');
 
       const job = toGenerationJob(payload);
       setActiveJob(job);
@@ -281,9 +348,12 @@ export default function GenerateApp({
         'success',
       );
     } catch (error: any) {
-      pushLog(`Generation failed: ${error.message || 'Unknown error'}`);
-      onAddActivityLog?.('Generation failed', error.message || 'Unknown generation error', 'generation', 'failed');
-      showToast(error.message || 'Generation failed');
+      const message = error.message || 'Unknown generation error';
+      console.error('Generation failed', error);
+      pushLog(`Generation failed: ${message}`);
+      setGenerationError(`Generation failed: ${message}`);
+      onAddActivityLog?.('Generation failed', message, 'generation', 'failed');
+      showToast(`Generation failed: ${message}`);
     } finally {
       setGenerating(false);
     }
@@ -307,8 +377,14 @@ export default function GenerateApp({
 
   const handleCopy = async () => {
     if (!selectedFile) return;
-    await navigator.clipboard.writeText(selectedFile.content);
+    await copyText(selectedFile.content);
     showToast('Code copied to clipboard');
+  };
+
+  const handleCopyFullOutput = async () => {
+    if (!result) return;
+    await copyText(buildGeneratedOutputText(result));
+    showToast('Full generated output copied');
   };
 
   const handleExplainCode = () => {
@@ -358,11 +434,12 @@ export default function GenerateApp({
   if (!result && !generating) {
     return (
       <div className="min-h-[calc(100vh-120px)] flex items-start justify-center py-8">
+        {toast && <Toast message={toast} />}
         <GeneratorForm
           projectName={projectName}
-          setProjectName={setProjectName}
+          setProjectName={handleProjectNameChange}
           prompt={prompt}
-          setPrompt={setPrompt}
+          setPrompt={handlePromptChange}
           appType={appType}
           setAppType={setAppType}
           selectedStack={selectedStack}
@@ -370,6 +447,9 @@ export default function GenerateApp({
           selectedFeatures={selectedFeatures}
           toggleFeature={toggleFeature}
           onSubmit={handleGenerate}
+          generating={generating}
+          validationMessage={validationMessage}
+          generationError={generationError}
         />
       </div>
     );
@@ -378,10 +458,10 @@ export default function GenerateApp({
   return (
     <div className="space-y-6 pb-12">
       {toast && (
-        <div className="fixed right-6 top-20 z-[9999] rounded-lg border border-emerald-500/30 bg-[#0b0d10] px-4 py-3 text-xs text-white shadow-2xl">
-          {toast}
-        </div>
+        <Toast message={toast} />
       )}
+
+      {generationError && <ErrorBanner message={generationError} />}
 
       <section className="rounded-xl border border-white/5 bg-[#09090b] p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -424,21 +504,30 @@ export default function GenerateApp({
           <OutputTabs activeTab={activeOutputTab} onChange={setActiveOutputTab} showPreview={showPreview} />
 
           {activeOutputTab === 'code' && (
-            <CodeWorkspacePanel
-              showFiles={showFiles}
-              visibleFiles={visibleFiles}
-              allFilesCount={allFiles.length}
-              selectedFile={selectedFile}
-              selectedFilePath={selectedFile?.path || ''}
-              onSelectFile={setSelectedFilePath}
-              onCopy={handleCopy}
-              onDownloadFile={handleDownloadFile}
-              onDownloadZip={handleDownloadZip}
-              onExplainCode={handleExplainCode}
-              onRegenerateFile={handleRegenerateFile}
-              onFixIssues={handleFixIssues}
-              codeNote={codeNote}
-            />
+            <div className="space-y-4">
+              {result && (
+                <GeneratedOutputOverview
+                  result={result}
+                  files={allFiles}
+                  onCopyAll={handleCopyFullOutput}
+                />
+              )}
+              <CodeWorkspacePanel
+                showFiles={showFiles}
+                visibleFiles={visibleFiles}
+                allFilesCount={allFiles.length}
+                selectedFile={selectedFile}
+                selectedFilePath={selectedFile?.path || ''}
+                onSelectFile={setSelectedFilePath}
+                onCopy={handleCopy}
+                onDownloadFile={handleDownloadFile}
+                onDownloadZip={handleDownloadZip}
+                onExplainCode={handleExplainCode}
+                onRegenerateFile={handleRegenerateFile}
+                onFixIssues={handleFixIssues}
+                codeNote={codeNote}
+              />
+            </div>
           )}
 
           {activeOutputTab === 'spec' && (
@@ -485,6 +574,77 @@ export default function GenerateApp({
         </div>
       </section>
     </div>
+  );
+}
+
+function Toast({ message }: { message: string }) {
+  return (
+    <div className="fixed right-6 top-20 z-[9999] rounded-lg border border-emerald-500/30 bg-[#0b0d10] px-4 py-3 text-xs text-white shadow-2xl">
+      {message}
+    </div>
+  );
+}
+
+function ErrorBanner({ message, compact = false }: { message: string; compact?: boolean }) {
+  return (
+    <section className={`rounded-xl border border-amber-500/25 bg-amber-500/10 ${compact ? 'p-3' : 'p-4'}`}>
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <div>
+          <p className="text-xs font-semibold text-amber-100">{compact ? 'Input needed' : 'Generator notice'}</p>
+          <p className="mt-1 text-xs leading-5 text-amber-100/80">{message}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function GeneratedOutputOverview({
+  result,
+  files,
+  onCopyAll,
+}: {
+  result: GenerationResult;
+  files: GeneratedFile[];
+  onCopyAll: () => void;
+}) {
+  const sectionCounts = files.reduce<Record<string, number>>((acc, file) => {
+    const section = getFileSection(file.path);
+    acc[section] = (acc[section] || 0) + 1;
+    return acc;
+  }, {});
+
+  const outputItems = [
+    { label: 'App specification', value: `${result.appSpec.pages.length} pages, ${result.appSpec.apiRoutes.length} API routes` },
+    { label: 'Folder structure', value: 'README.md and generated-project tree' },
+    { label: 'Frontend files', value: `${sectionCounts.Frontend || 0} files` },
+    { label: 'Backend files', value: `${sectionCounts.Backend || 0} files` },
+    { label: 'Database schema', value: `${sectionCounts.Database || 0} SQL file` },
+    { label: 'API routes', value: `${sectionCounts.API || 0} docs/routes files` },
+    { label: 'README/deployment notes', value: `${sectionCounts.Deployment || 0} files` },
+  ];
+
+  return (
+    <section className="rounded-xl border border-blue-500/15 bg-blue-500/[0.06] p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-white">Generated Output Ready</h2>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">
+            AppForgeAI saved the result in state and opened the Code tab. The output includes specs, files, schema, API routes, and deployment notes.
+          </p>
+        </div>
+        <IconButton label="Copy Full Output" icon={<Copy className="h-3.5 w-3.5" />} onClick={onCopyAll} />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {outputItems.map((item) => (
+          <div key={item.label} className="rounded-lg border border-white/5 bg-zinc-950/80 p-3">
+            <span className="block text-[9px] uppercase tracking-widest text-zinc-600">{item.label}</span>
+            <strong className="mt-1 block text-xs text-zinc-200">{item.value}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -636,9 +796,12 @@ function GeneratorForm(props: {
   selectedFeatures: string[];
   toggleFeature: (value: string) => void;
   onSubmit: (event: React.FormEvent) => void;
+  generating: boolean;
+  validationMessage: string | null;
+  generationError: string | null;
 }) {
   return (
-    <form onSubmit={props.onSubmit} className="w-full max-w-6xl space-y-7 rounded-xl border border-white/5 bg-[#09090b] p-6 shadow-2xl shadow-black/40 md:p-8">
+    <form noValidate onSubmit={props.onSubmit} className="w-full max-w-6xl space-y-7 rounded-xl border border-white/5 bg-[#09090b] p-6 shadow-2xl shadow-black/40 md:p-8">
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -669,10 +832,10 @@ function GeneratorForm(props: {
         <label className="space-y-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Project Name</span>
           <input
-            required
             value={props.projectName}
             onChange={(event) => props.setProjectName(event.target.value)}
             placeholder="Vyapaar"
+            aria-invalid={Boolean(props.validationMessage && !props.projectName.trim())}
             className="w-full rounded-lg border border-white/10 bg-[#111114] px-4 py-3 text-sm text-white outline-none transition focus:border-blue-500"
           />
         </label>
@@ -691,13 +854,21 @@ function GeneratorForm(props: {
       <label className="block space-y-2">
         <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">App Description Prompt</span>
         <textarea
-          required
           value={props.prompt}
           onChange={(event) => props.setPrompt(event.target.value)}
           placeholder="Example: Build a business management SaaS for shop owners with inventory, orders, customers, payments, staff login, dashboards, and email alerts."
+          aria-invalid={Boolean(props.validationMessage && !props.prompt.trim())}
           className="h-44 w-full resize-none rounded-lg border border-white/10 bg-[#111114] p-4 font-mono text-sm leading-6 text-white outline-none transition placeholder:text-zinc-700 focus:border-blue-500"
         />
       </label>
+
+      {props.validationMessage && (
+        <ErrorBanner message={props.validationMessage} compact />
+      )}
+
+      {props.generationError && (
+        <ErrorBanner message={props.generationError} />
+      )}
 
       <div className="space-y-3">
         <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Tech Stack</span>
@@ -729,10 +900,10 @@ function GeneratorForm(props: {
         <button
           type="submit"
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-xs font-bold uppercase tracking-widest text-white shadow-xl shadow-blue-500/10 transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-          disabled={!props.projectName.trim() || !props.prompt.trim()}
+          disabled={props.generating}
         >
-          <Play className="h-4 w-4" />
-          Generate App
+          {props.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+          {props.generating ? 'Generating...' : 'Generate App'}
         </button>
       </div>
     </form>
@@ -1108,6 +1279,17 @@ function getMinimumGenerationMs(prompt: string, features: string[]) {
   return 3000;
 }
 
+function isUsableGenerationPayload(payload: any): payload is GenerationResult {
+  return Boolean(
+    payload
+      && payload.appIntent?.appName
+      && payload.appSpec?.pages?.length
+      && payload.dataSchema?.entities?.length
+      && payload.files
+      && Object.keys(payload.files).length > 0,
+  );
+}
+
 function formatRemaining(ms: number) {
   const seconds = Math.max(0, Math.ceil(ms / 1000));
   const mins = Math.floor(seconds / 60);
@@ -1117,6 +1299,66 @@ function formatRemaining(ms: number) {
 
 function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
+function buildGeneratedOutputText(result: GenerationResult) {
+  const files = Object.values(result.files || {});
+  const folderStructure = files
+    .map((file) => file.path.replace(/^generated-project\//, ''))
+    .sort()
+    .map((path) => `- ${path}`)
+    .join('\n');
+  const fileSections = files
+    .map((file) => [
+      `### ${file.path}`,
+      file.explanation,
+      '````' + file.language,
+      file.content,
+      '````',
+    ].join('\n'))
+    .join('\n\n');
+
+  return [
+    `# ${result.appIntent.appName}`,
+    '',
+    `Prompt: ${result.prompt}`,
+    `Provider: ${result.providerUsed}`,
+    '',
+    '## App Specification',
+    '````json',
+    JSON.stringify(result.appSpec, null, 2),
+    '````',
+    '',
+    '## Database Schema',
+    '````json',
+    JSON.stringify(result.dataSchema, null, 2),
+    '````',
+    '',
+    '## API Routes',
+    result.appSpec.apiRoutes.map((route: any) => `- ${route.method} ${route.path} -> ${route.entity}`).join('\n'),
+    '',
+    '## Folder Structure',
+    folderStructure,
+    '',
+    '## Generated Files',
+    fileSections,
+  ].join('\n');
 }
 
 function slugify(value: string) {
